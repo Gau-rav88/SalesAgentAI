@@ -1,0 +1,70 @@
+import { apiFetch } from "./api-client";
+import type { OutreachDraft } from "@/types";
+
+export const queueService = {
+  /** Every outreach draft for the current user, newest first. */
+  async list(): Promise<OutreachDraft[]> {
+    return apiFetch<OutreachDraft[]>("/queue/");
+  },
+  
+
+  /** Generate a new draft from a completed analysis (persona + strategy + guardrail). */
+  async generate(analysisId: number | string): Promise<OutreachDraft> {
+    return apiFetch<OutreachDraft>(`/queue/generate/${analysisId}`, {
+      method: "POST",
+    });
+  },
+
+  async approve(draftId: string): Promise<OutreachDraft> {
+    return apiFetch<OutreachDraft>(`/queue/${draftId}/approve`, {
+      method: "POST",
+    });
+  },
+
+  async reject(draftId: string): Promise<OutreachDraft> {
+    return apiFetch<OutreachDraft>(`/queue/${draftId}/reject`, {
+      method: "POST",
+    });
+  },
+
+  async edit(draftId: string, subject: string, body: string): Promise<OutreachDraft> {
+    const params = new URLSearchParams({ subject, body });
+    return apiFetch<OutreachDraft>(`/queue/${draftId}/edit?${params.toString()}`, {
+      method: "POST",
+    });
+  },
+
+  async getBestTime(draftId: string): Promise<BestTimeResponse> {
+    return apiFetch<BestTimeResponse>(`/scheduling/${draftId}/best-time`);
+  },
+
+  async getMeetingSlots(draftId: string): Promise<MeetingSlotsResponse> {
+    return apiFetch<MeetingSlotsResponse>(`/scheduling/${draftId}/meeting-slots`);
+  },
+
+  async confirmMeeting(
+    draftId: string,
+    slotIso: string,
+    durationMinutes = 30,
+  ): Promise<ConfirmMeetingResponse> {
+    return apiFetch<ConfirmMeetingResponse>(`/scheduling/${draftId}/meeting`, {
+      method: "POST",
+      body: JSON.stringify({ slot: slotIso, duration_minutes: durationMinutes }),
+    });
+  },
+};
+export interface BestTimeResponse {
+  recommended_send_at: string;
+  reasoning: string;
+}
+
+export interface MeetingSlotsResponse {
+  slots: string[];
+}
+
+export interface ConfirmMeetingResponse {
+  meeting_time: string;
+  duration_minutes: number;
+  google_calendar_url: string;
+  ics_url: string;
+}
