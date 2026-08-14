@@ -2,12 +2,10 @@ import { apiFetch } from "./api-client";
 import type { OutreachDraft } from "@/types";
 
 export const queueService = {
-  /** Every outreach draft for the current user, newest first. */
   async list(): Promise<OutreachDraft[]> {
     return apiFetch<OutreachDraft[]>("/queue/");
   },
 
-  /** Generate a new draft from a completed analysis (persona + strategy + guardrail). */
   async generate(analysisId: number | string): Promise<OutreachDraft> {
     return apiFetch<OutreachDraft>(`/queue/generate/${analysisId}`, {
       method: "POST",
