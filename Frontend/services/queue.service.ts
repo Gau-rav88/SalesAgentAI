@@ -6,7 +6,6 @@ export const queueService = {
   async list(): Promise<OutreachDraft[]> {
     return apiFetch<OutreachDraft[]>("/queue/");
   },
-  
 
   /** Generate a new draft from a completed analysis (persona + strategy + guardrail). */
   async generate(analysisId: number | string): Promise<OutreachDraft> {
@@ -34,6 +33,18 @@ export const queueService = {
     });
   },
 
+  async sendEmail(
+    draftId: string,
+    recipient: string,
+    subject: string,
+    body: string
+  ): Promise<{ success: boolean; message: string }> {
+    return apiFetch(`/queue/${draftId}/send`, {
+      method: "POST",
+      body: JSON.stringify({ recipient, subject, body }),
+    });
+  },
+
   async getBestTime(draftId: string): Promise<BestTimeResponse> {
     return apiFetch<BestTimeResponse>(`/scheduling/${draftId}/best-time`);
   },
@@ -53,6 +64,7 @@ export const queueService = {
     });
   },
 };
+
 export interface BestTimeResponse {
   recommended_send_at: string;
   reasoning: string;
