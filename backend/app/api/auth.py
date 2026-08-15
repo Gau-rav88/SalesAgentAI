@@ -173,6 +173,7 @@ def verify_oauth_state(state: str) -> int:
 
 
 def create_google_flow(code_verifier: str | None = None):
+    print("DEBUG REDIRECT_URI:", repr(settings.GOOGLE_REDIRECT_URI))
     client_config = {
         "web": {
             "client_id": settings.GOOGLE_CLIENT_ID,

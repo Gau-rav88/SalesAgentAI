@@ -16,7 +16,7 @@ class OpenRouterProvider(BaseLLMProvider):
     def __init__(self):
         
         self.api_key = settings.OPENROUTER_API_KEY
-        print("OPENROUTER KEY:", self.api_key)
+       
         self.model = "qwen/qwen3-30b-a3b"
 
     async def generate(self, prompt: str) -> LLMResponse:
