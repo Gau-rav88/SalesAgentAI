@@ -5,6 +5,7 @@ import secrets
 from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi.responses import RedirectResponse
 from google.auth.transport import requests
 from google.oauth2 import id_token
 from google_auth_oauthlib.flow import Flow
@@ -15,6 +16,7 @@ from app.core.config import settings
 from app.database.session import get_db
 from app.models.connected_account import ConnectedAccount
 from app.models.oauth_state import OAuthState
+
 from app.models.user import User
 from app.schemas.user import (
     GoogleLogin,
@@ -542,19 +544,22 @@ def google_callback(
         db.commit()
         db.refresh(account)
 
-        # ====================================================
-        # 18. Success
+       # ====================================================
+        # 18. Success — redirect back into the frontend app
         # ====================================================
 
-        return {
-            "success": True,
-            "message": "Gmail connected successfully",
-            "email": google_email,
-            "user_id": prospectiq_user_id,
-        }
+        return RedirectResponse(
+            url=f"{settings.FRONTEND_URL}/queue?gmail_connected=true"
+        )
 
-    except HTTPException:
-        raise
+    except HTTPException as e:
+
+        return RedirectResponse(
+            url=(
+                f"{settings.FRONTEND_URL}/queue"
+                f"?gmail_error={e.detail}"
+            )
+        )
 
     except Exception as e:
 
@@ -568,11 +573,12 @@ def google_callback(
             "========================================\n"
         )
 
-        raise HTTPException(
-            status_code=500,
-            detail="Google OAuth connection failed",
+        return RedirectResponse(
+            url=(
+                f"{settings.FRONTEND_URL}/queue"
+                f"?gmail_error=connection_failed"
+            )
         )
-
 
 # ============================================================
 # Gmail Status
