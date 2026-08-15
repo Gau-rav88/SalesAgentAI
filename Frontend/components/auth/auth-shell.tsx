@@ -3,7 +3,7 @@
 import Link from "next/link";
 import dynamic from "next/dynamic";
 import { motion } from "framer-motion";
-import { LayoutGrid } from "lucide-react";
+import { Logo } from "@/components/common/logo";
 
 const Threads = dynamic(() => import("@/components/backgrounds/threads"), { ssr: false });
 
@@ -29,11 +29,8 @@ export function AuthShell({
         transition={{ duration: 0.5 }}
         className="relative z-10 w-full max-w-sm"
       >
-        <Link href="/" className="mb-8 flex items-center justify-center gap-2">
-          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-b from-white to-white/70 text-[#090909]">
-            <LayoutGrid className="h-4 w-4" />
-          </div>
-          <span className="text-sm font-semibold tracking-tight text-white">ProspectIQ</span>
+        <Link href="/" className="mb-8 flex items-center justify-center">
+          <Logo height={40} priority />
         </Link>
 
         <div className="glass-panel rounded-2xl p-7 shadow-premium">

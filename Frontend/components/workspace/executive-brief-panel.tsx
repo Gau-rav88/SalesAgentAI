@@ -149,9 +149,9 @@ export function HistorySidebar({
                 <span className="flex h-6 w-6 items-center justify-center rounded-md bg-white/[0.06] text-[10px] text-white/60">
                   {company.logoInitial}
                 </span>
-                {company.name}
+                <span className="font-semibold">{company.name}</span>
               </span>
-              <span className="text-[11px] text-white/25">{company.score}</span>
+              <span className="text-[11px] font-semibold text-white/25">{company.score}</span>
             </button>
           ))}
         </div>

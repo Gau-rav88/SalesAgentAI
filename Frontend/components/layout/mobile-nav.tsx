@@ -4,10 +4,11 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import * as DialogPrimitive from "@radix-ui/react-dialog";
 import { X, Building2, Share2, ListChecks, ScrollText, Sparkles, Lightbulb, LayoutGrid, User } from "lucide-react";
-import { NAV_ITEMS, APP_NAME } from "@/lib/constants";
+import { NAV_ITEMS } from "@/lib/constants";
 import { cn } from "@/lib/utils";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { useCurrentUser } from "@/components/auth/auth-guard";
+import { Logo } from "@/components/common/logo";
 
 const ICONS: Record<string, React.ElementType> = {
   workspace: Sparkles,
@@ -48,12 +49,7 @@ export function MobileNav({ open, onOpenChange }: MobileNavProps) {
           <DialogPrimitive.Title className="sr-only">Navigation menu</DialogPrimitive.Title>
 
           <div className="flex items-center justify-between px-5 py-6">
-            <div className="flex items-center gap-2">
-              <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-b from-white to-white/70 text-[#090909]">
-                <LayoutGrid className="h-4 w-4" />
-              </div>
-              <span className="text-sm font-semibold tracking-tight text-white">{APP_NAME}</span>
-            </div>
+            <Logo height={26} />
             <DialogPrimitive.Close className="rounded-lg p-1.5 text-white/40 hover:text-white hover:bg-white/[0.06] transition-colors">
               <X className="h-4 w-4" />
               <span className="sr-only">Close menu</span>

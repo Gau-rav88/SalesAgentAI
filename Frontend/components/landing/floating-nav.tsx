@@ -3,9 +3,10 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { motion } from "framer-motion";
-import { LayoutGrid, Menu, X } from "lucide-react";
+import { Menu, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { Logo } from "@/components/common/logo";
 
 const LINKS = [
   { label: "Platform", href: "#platform" },
@@ -39,11 +40,8 @@ export function FloatingNav() {
             : "border-white/5 bg-white/[0.02] backdrop-blur-md",
         )}
       >
-        <Link href="/" className="flex items-center gap-2">
-          <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-gradient-to-b from-white to-white/70 text-[#090909]">
-            <LayoutGrid className="h-3.5 w-3.5" />
-          </div>
-          <span className="text-sm font-semibold tracking-tight text-white">ProspectIQ</span>
+        <Link href="/" className="flex items-center">
+          <Logo height={22} priority />
         </Link>
 
         <div className="hidden md:flex items-center gap-1">

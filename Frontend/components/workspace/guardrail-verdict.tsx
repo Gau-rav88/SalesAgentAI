@@ -15,12 +15,6 @@ export interface GuardrailVerdictProps {
   compact?: boolean;
 }
 
-/**
- * The Guardrail "wow moment": a 2-3 second, unmissable read on whether the
- * AI-generated strategy is backed by evidence. Two states only —
- * approved (calm, confident) or blocked (loud, unmissable) — because a
- * verification step that always looks alarming stops meaning anything.
- */
 export function GuardrailVerdict({
   approved,
   riskLevel,
