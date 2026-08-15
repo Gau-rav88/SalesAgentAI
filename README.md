@@ -1,5 +1,7 @@
 # ProspectIQ — AI Decision Intelligence Platform for Enterprise Sales
-![alt text](image.png)
+
+![ProspectIQ](image.png)
+
 ProspectIQ turns scattered company research into an evidence-backed, human-approved
 outreach plan. A supervised multi-agent pipeline ingests whatever you give it — a
 company brief, notes, a website — extracts structured knowledge, builds a buyer
@@ -16,7 +18,8 @@ before anything is allowed to reach a prospect's inbox.
 
 1. **Research → Knowledge** — free-form text, notes, or a URL go into a
    knowledge-extraction agent that pulls out company facts, decision-makers,
-   pain points, and buying signals.
+   pain points, and buying signals. `ResearchAgentV2` runs autonomous web/news
+   research from the Workspace chat, producing real, cited evidence sources.
 2. **Persona & Intent** — dedicated agents build a buyer persona and score
    purchase intent / buying stage from that knowledge.
 3. **Strategy** — a strategy agent turns persona + intent into a recommended
@@ -25,10 +28,16 @@ before anything is allowed to reach a prospect's inbox.
    underlying evidence. Unsupported claims get flagged, a risk level is
    assigned, and unverified strategies are **blocked from outreach** until a
    human reviews them.
-5. **Human-approved outreach** — approved strategies can be turned into an
+5. **Evidence-driven outreach purpose** — the Recommendation Center scores
+   which outreach purpose (Sales, Product Demo, Partnership, Sponsorship,
+   Decision-Maker Intro, etc.) is actually supported by an account's real
+   evidence, surfaces exactly one **recommended** purpose plus any other
+   valid options, and lets the user pick before a draft is generated — the
+   chosen purpose reshapes the generated subject/body, it isn't decorative.
+6. **Human-approved outreach** — approved strategies are turned into an
    outreach draft (email/LinkedIn/call script), edited, approved, and sent —
    currently wired through Gmail — with every step recorded in a queryable
-   **audit trail**.
+   **audit trail**. Nothing is ever sent without an explicit human approval.
 
 A Supervisor/Router layer sits in front of the pipeline: free-form chat in the
 Workspace is planned and routed to either the sales-analysis pipeline (for
@@ -62,28 +71,30 @@ live step-by-step progress back to the UI over SSE.
           │  Strategy Agent       │
           │        │              │
           │        ▼              │
-          │  Guardrail Agent ─────┼──▶ approved? ──▶ Outreach Queue ──▶ Gmail
-          │  (evidence check,     │        │
-          │   risk scoring)       │        ▼
-          └───────────────────────┘   blocked ──▶ human review required
-                     │
-                     ▼
-              Audit Trail (Postgres)
+          │  Guardrail Agent ─────┼──▶ approved? ──▶ Recommendation Center
+          │  (evidence check,     │        │          (purpose selection)
+          │   risk scoring)       │        │                │
+          └───────────────────────┘        │                ▼
+                     │                      │          Outreach Queue ──▶ Gmail
+                     ▼                      ▼                (human approval
+              Audit Trail (Postgres)   blocked ──▶            required to send)
+                                        human review
+                                        required
 ```
 
 Each agent is a focused class that makes its own LLM call, parses a structured
 JSON response (with safe fallbacks if parsing fails), and persists its output
 to Postgres against the company/analysis record — so every screen in the
-frontend (Executive Brief, Audit Trail, Accounts) reads from the same
-real analysis history instead of a separate mock layer.
+frontend (Executive Brief, Audit Trail, Accounts, Recommendation Center) reads
+from the same real analysis history instead of a separate mock layer.
 
 ---
 
 ## Tech stack
 
 **Backend**
-- FastAPI + SQLAlchemy + PostgreSQL
-- JWT authentication
+- FastAPI + SQLAlchemy + PostgreSQL (Alembic migrations)
+- JWT authentication + Google OAuth login
 - Multi-LLM router with adapters for Groq, Gemini, OpenRouter, and self-hosted
   models (vLLM/Ollama) — no single-provider lock-in
 - Server-Sent Events (`/executor/stream`) for live agent progress in the UI
@@ -91,7 +102,9 @@ real analysis history instead of a separate mock layer.
 
 **Frontend**
 - Next.js 15 (App Router) + TypeScript
-- Tailwind CSS + Radix-based UI primitives
+- Tailwind CSS + Radix-based UI primitives (shadcn/ui style)
+- `@react-oauth/google` for Google sign-in, styled to match the app's
+  near-black, thin-border design language
 - Framer Motion, React Flow (Relationship Graph), Recharts (Accounts
   dashboards), cmdk (⌘K command palette)
 
@@ -106,11 +119,14 @@ backend/
                         research_agent, research_v2, sales_analysis_agent
     api/                auth, knowledge, persona, intent, strategy, guardrail,
                         assistant, analysis, workspace, queue, audit, supervisor,
-                        executor, planner, router, memory, llm, tools, upload, website
-    models/             User, Company, AnalysisResult, OutreachDraft, ConnectedAccount, ...
+                        executor, planner, router, memory, llm, tools, upload,
+                        website, agents, enrichment, health
+    models/             User, Company, AnalysisResult, OutreachDraft,
+                        ConnectedAccount, KnowledgeSource, OAuthState, ...
     pipeline/           prospect_pipeline.py — chains the five core agents
     supervisor/         plans + routes free-form prompts to the right agent
     main.py
+  alembic/               migrations
   requirements.txt
 
 Frontend/
@@ -120,9 +136,11 @@ Frontend/
     login/ signup/ forgot-password/
   components/
     workspace/           chat panel, executive brief, guardrail verdict, prompt composer
-    accounts/ audit/ queue/ graph/ layout/ ui/
+    recommendations/      recommendation-card.tsx — purpose selector, evidence links
+    accounts/ audit/ queue/ graph/ layout/ auth/ ui/
   services/               api-client + one service per domain (workspace, accounts,
-                           queue, auth) — all real fetch calls, no mock layer
+                           queue, auth, recommendations, audit) — real fetch calls,
+                           no mock layer except a demo-only fallback in accounts.service.ts
   lib/ hooks/ types/
 ```
 
@@ -140,8 +158,28 @@ pip install -r requirements.txt
 uvicorn app.main:app --reload
 ```
 
-Set your database URL and LLM provider API key(s) in `.env` before starting —
-see `app/core/config.py` for the expected variables.
+Create a `.env` in `backend/` with, at minimum:
+
+```env
+DATABASE_URL=postgresql://user:password@localhost:5432/prospectiq
+JWT_SECRET_KEY=change-me
+
+# LLM providers — set the ones you use; DEFAULT_PROVIDER selects which
+DEFAULT_PROVIDER=groq
+GROQ_API_KEY=
+GEMINI_API_KEY=
+OPENROUTER_API_KEY=
+TAVILY_API_KEY=
+
+# Google OAuth (login + Gmail send)
+GOOGLE_CLIENT_ID=
+GOOGLE_CLIENT_SECRET=
+GOOGLE_REDIRECT_URI=http://localhost:8000/auth/google/callback
+FRONTEND_URL=http://localhost:3000
+```
+
+See `app/core/config.py` for the full list of supported settings and their
+defaults.
 
 ### Frontend
 
@@ -151,24 +189,30 @@ npm install
 npm run dev
 ```
 
-Open http://localhost:3000. Copy `.env.example` to `.env.local` and point
-`NEXT_PUBLIC_API_URL` at your running backend.
+Open http://localhost:3000. Create `.env.local` with:
+
+```env
+NEXT_PUBLIC_API_URL=http://localhost:8000
+NEXT_PUBLIC_GOOGLE_CLIENT_ID=
+```
 
 ---
 
 ## Current status
 
 **Built and working:** knowledge extraction → persona → intent → strategy →
-guardrail pipeline; Supervisor/Router with live SSE streaming; Guardrail
-evidence checking with risk scoring and outreach blocking; Outreach Queue with
-approve/edit/send via Gmail; Audit Trail backed by real analysis history;
-Workspace chat, Accounts dashboard, Relationship Graph, Recommendation Center.
+guardrail pipeline; Supervisor/Router with live SSE streaming; `ResearchAgentV2`
+web research feeding the Workspace; Guardrail evidence checking with risk
+scoring and outreach blocking; evidence-driven Recommendation Center (one
+recommended outreach purpose + other valid, evidence-supported options, purpose
+selection actually reshapes the generated draft); clickable real evidence
+source links; Outreach Queue with approve/edit/send via Gmail, gated on
+explicit human approval; Google Login (styled to match the app's design
+system); Audit Trail backed by real analysis history; Workspace chat, Accounts
+dashboard, Relationship Graph.
 
-**In progress:** a dedicated autonomous web-research step (`research_v2`) is
-built but not yet wired into the main pipeline — today the pipeline runs on
-whatever text/notes are given to it rather than agent-driven web research.
-Meeting scheduling (best-time suggestions, calendar slots) is partially wired
-on the frontend ahead of the corresponding backend endpoints.
+**In progress:** meeting scheduling (best-time suggestions, calendar slots) is
+wired on the frontend ahead of the corresponding backend endpoints.
 
 **Not yet built:** HubSpot/CRM integrations, WhatsApp/Twilio outreach
 channels, and the Kubernetes/Temporal/Kafka production-scale infrastructure
@@ -179,7 +223,7 @@ service + Next.js app.
 
 ## Team
 
-Nikita Mishra · Ranjit Bhardwaj · Gaurav Chauhan · Shreyash Bhagwat
+Nikita Mishra · Ranjit Bhardwaj · Gaurav Chauhan
 
 ## License
 
