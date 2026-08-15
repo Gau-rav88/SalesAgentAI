@@ -48,10 +48,10 @@ origins = [
     "http://127.0.0.1:3000",
 
     # Vercel Frontend
-    "https://sales-agent-ai-jet.vercel.app/",
+    "https://sales-agent-ai-jet.vercel.app",
 
     # Preview deployments
-    "https://sales-agent-ai-git-main-gaurav88s-projects.vercel.app/",
+    "https://sales-agent-ai-git-main-gaurav88s-projects.vercel.app",
 ]
 
 app.add_middleware(
