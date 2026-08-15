@@ -115,7 +115,10 @@ export function LoginForm() {
         <Separator className="flex-1" />
       </div>
 
-      <div ref={googleBtnWrapperRef} className="flex justify-center [&>div]:!w-full">
+      <div
+        ref={googleBtnWrapperRef}
+        className="flex justify-center overflow-hidden rounded-full border border-white/15 bg-[#111111] transition-colors hover:border-white/30 [&>div]:!w-full"
+      >
         <GoogleLogin
           onSuccess={async (credentialResponse) => {
             if (!credentialResponse.credential) return;
