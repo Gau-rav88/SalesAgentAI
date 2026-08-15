@@ -21,23 +21,148 @@ router = APIRouter(
 )
 
 
-# =========================================================
-# Intent-driven outreach strategy (Recommendation Center)
-#
-# Recommendation *type* (not content) is driven purely by the existing,
-# already-computed Intent Agent score — no new score is invented here.
-# Thresholds match the ones already used elsewhere in this file for the
-# same 0-100 intent_score (see company_trend()'s >=80 / >=60 split).
-# =========================================================
-
 INTENT_HIGH_THRESHOLD = 80
 INTENT_MEDIUM_THRESHOLD = 60
 
-# Fixed catalog of outreach strategy types per intent tier. These are
-# strategy *categories* (how to approach the account), not fabricated
-# account facts — the account-specific grounding for whichever one is
-# recommended comes from that account's real knowledge/persona/guardrail
-# data at request time.
+
+OUTREACH_PURPOSES = {
+    "sales": {
+        "label": "Sales / Business Opportunity",
+        "focus": "business-value / solution-focused outreach",
+    },
+    "product_demo": {
+        "label": "Product Demo",
+        "focus": "demo / discovery-focused outreach",
+    },
+    "collaboration": {
+        "label": "Collaboration",
+        "focus": "collaboration-focused outreach",
+    },
+    "strategic_partnership": {
+        "label": "Strategic Partnership",
+        "focus": "partnership-focused outreach",
+    },
+    "sponsorship": {
+        "label": "Sponsorship",
+        "focus": "sponsorship-focused outreach",
+    },
+    "event_community": {
+        "label": "Event / Community",
+        "focus": "event/community-focused outreach",
+    },
+    "media_pr": {
+        "label": "Media / PR",
+        "focus": "media/PR-focused outreach",
+    },
+    "decision_maker_intro": {
+        "label": "Decision-Maker Introduction",
+        "focus": "a concise executive introduction",
+    },
+    "followup_nurture": {
+        "label": "Follow-up / Nurture",
+        "focus": "relationship-building follow-up",
+    },
+}
+
+_PURPOSE_EVIDENCE_KEYWORDS = {
+    "collaboration": ["collaborat", "co-build", "joint", "integration partner"],
+    "strategic_partnership": ["partner", "partnership", "alliance"],
+    "sponsorship": ["sponsor", "sponsorship"],
+    "event_community": ["event", "conference", "summit", "community", "meetup"],
+    "media_pr": ["media", "press", "pr ", "publicity", "announcement", "coverage"],
+}
+
+
+def _evidence_text(knowledge: dict, sources: list) -> str:
+    """Concatenates the real extracted text this account already has —
+    never fetches or invents anything new — purely so keyword gating
+    below has something real to check against."""
+    parts = [
+        knowledge.get("industry", "") or "",
+        " ".join(knowledge.get("pain_points") or []),
+        " ".join(knowledge.get("buying_signals") or []),
+        " ".join((s.get("title", "") if isinstance(s, dict) else "") for s in sources),
+    ]
+    return " ".join(parts).lower()
+
+
+def _applicable_purposes(
+    knowledge: dict,
+    persona: dict,
+    decision_maker: str,
+    pain_points: list,
+    buying_signals: list,
+    sources: list,
+) -> list[str]:
+   
+    applicable = []
+    has_any_evidence = bool(pain_points or buying_signals or sources)
+
+    if has_any_evidence:
+        applicable.append("sales")
+    if pain_points or buying_signals:
+        applicable.append("product_demo")
+    if decision_maker:
+        applicable.append("decision_maker_intro")
+    if has_any_evidence:
+        applicable.append("followup_nurture")
+
+    text = _evidence_text(knowledge, sources)
+    for key, keywords in _PURPOSE_EVIDENCE_KEYWORDS.items():
+        if any(kw in text for kw in keywords):
+            applicable.append(key)
+
+    return applicable
+
+
+def _purpose_strategy(
+    purpose_key: str,
+    level: str,
+    company_name: str,
+    decision_maker: str,
+    pain_points: list,
+    buying_signals: list,
+    applicable_purposes: list[str],
+) -> dict:
+   
+    purpose = OUTREACH_PURPOSES.get(purpose_key)
+
+    if purpose is None:
+        return {
+            "purpose": purpose_key,
+            "insufficient_evidence": True,
+            "message": "Unknown outreach purpose.",
+        }
+
+    if purpose_key not in applicable_purposes:
+        return {
+            "purpose": purpose_key,
+            "purpose_label": purpose["label"],
+            "insufficient_evidence": True,
+            "message": "Insufficient evidence for this outreach type.",
+        }
+
+    if level == "HIGH":
+        posture = "Direct, personalized"
+        grounding = f"to {decision_maker}" if decision_maker else "to the identified stakeholder"
+    elif level == "MEDIUM":
+        posture = "Evidence-first, discovery-oriented"
+        grounding = "opening a conversation before pitching"
+    else:
+        posture = "Soft, low-pressure"
+        grounding = "a light-touch signal rather than a pitch"
+
+    name = f"{posture} {purpose['label'].lower()} outreach"
+    description = f"{posture} {purpose['focus']} for {company_name}, {grounding}."
+
+    return {
+        "purpose": purpose_key,
+        "purpose_label": purpose["label"],
+        "insufficient_evidence": False,
+        "name": name,
+        "description": description,
+    }
+
 STRATEGY_OPTIONS_BY_LEVEL = {
     "HIGH": [
         {
@@ -188,8 +313,6 @@ async def workspace(
 
         total = len(analyses)
 
-        # analyses_by_company lists are already sorted ascending by
-        # created_at (from the query above), so the last one is latest.
         latest = analyses[-1]
 
         response.append(
@@ -245,8 +368,7 @@ async def workspace_stats(
     week_ago = now - timedelta(days=7)
     two_weeks_ago = now - timedelta(days=14)
 
-    # Latest + first analysis per company (analyses are sorted ascending,
-    # so the last write for a company_id in the loop is always its latest).
+   
     latest_by_company: dict[int, AnalysisResult] = {}
     first_created_by_company: dict[int, datetime] = {}
 
@@ -254,7 +376,6 @@ async def workspace_stats(
         latest_by_company[analysis.company_id] = analysis
         first_created_by_company.setdefault(analysis.company_id, analysis.created_at)
 
-    # ---- Stat cards ----
     total_accounts = len(companies)
     new_accounts_this_week = sum(
         1 for created in first_created_by_company.values() if created >= week_ago
@@ -292,16 +413,12 @@ async def workspace_stats(
         if not a.guardrail.get("approved", True) and a.created_at >= week_ago
     )
 
-    # ---- Per-company breakdown for the charts (status, pain points,
-    # trust buckets) — pulls each company's latest extracted knowledge. ----
+  
     status_counts = {"analyzed": 0, "in-review": 0, "queued": 0}
     industry_pain_counts: dict[str, int] = defaultdict(int)
     trust_buckets = {"0-20": 0, "21-40": 0, "41-60": 0, "61-80": 0, "81-100": 0}
     stakeholders_mapped = 0
 
-    # Single bulk query for every knowledge source we'll need, instead of
-    # one query per company (N+1) — this was the main cause of the slow
-    # page load, since each extra query is a full DB round trip.
     needed_knowledge_ids = {
         latest_by_company[c.id].knowledge_id
         for c in companies
@@ -351,7 +468,6 @@ async def workspace_stats(
             contacts = knowledge.get("decision_makers", []) or []
         stakeholders_mapped += len(contacts)
 
-    # ---- Research activity: analyses per day over the last 14 days ----
     activity_by_day: dict[str, int] = defaultdict(int)
     for analysis in all_analyses:
         activity_by_day[analysis.created_at.date().isoformat()] += 1
@@ -733,6 +849,7 @@ async def company_dashboard(
 @router.get("/recommendations")
 async def recommendations(
     company_id: int | None = None,
+    purpose: str | None = None,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
@@ -746,19 +863,10 @@ async def recommendations(
 
     analyses = query.order_by(AnalysisResult.created_at.asc()).all()
 
-    # One recommendation per company, built from that company's most
-    # recent analysis (analyses are sorted ascending above, so the last
-    # write per company_id in this loop is always the latest one) —
-    # mirrors the "current state of the account" convention used by
-    # company_dashboard() and workspace_stats() elsewhere in this file,
-    # instead of surfacing every historical analysis as a separate card.
     latest_by_company: dict[int, AnalysisResult] = {}
     for analysis in analyses:
         latest_by_company[analysis.company_id] = analysis
 
-    # Bulk-fetch each company's extracted knowledge (pain points, buying
-    # signals, real sources) in one query instead of one query per
-    # company, same pattern as workspace_stats() above.
     needed_knowledge_ids = {a.knowledge_id for a in latest_by_company.values()}
     knowledge_by_id: dict[int, dict] = {}
     if needed_knowledge_ids:
@@ -846,6 +954,27 @@ async def recommendations(
         # should say so plainly instead of implying a rich evidence base.
         evidence_sufficient = bool(sources or pain_points or buying_signals)
 
+        applicable_purposes = _applicable_purposes(
+            knowledge,
+            persona,
+            decision_maker,
+            pain_points,
+            buying_signals,
+            sources,
+        )
+
+        purpose_strategy = None
+        if purpose:
+            purpose_strategy = _purpose_strategy(
+                purpose,
+                level,
+                company.name,
+                decision_maker,
+                pain_points,
+                buying_signals,
+                applicable_purposes,
+            )
+
         why_parts = [f"{company.name} scored {intent_score}/100 intent ({level})."]
 
         if decision_maker:
@@ -903,6 +1032,11 @@ async def recommendations(
                 "buying_signals": buying_signals,
                 "evidence": sources,
                 "evidence_sufficient": evidence_sufficient,
+                "available_purposes": [
+                    {"key": key, "label": OUTREACH_PURPOSES[key]["label"]}
+                    for key in applicable_purposes
+                ],
+                "purpose_strategy": purpose_strategy,
                 "created_at": analysis.created_at,
             }
         )
@@ -1141,15 +1275,6 @@ async def company_activity(
     }
 
 
-# =========================================================
-# Stakeholders / Pain Points / Buying Signals / Graph
-#
-# These derive from the raw extracted knowledge (contacts,
-# decision_makers, pain_points, buying_signals) attached to a company's
-# most recent analysis, rather than a separate table — the knowledge
-# extraction agent already produces this data, it just wasn't exposed
-# yet.
-# =========================================================
 
 
 def _slugify(value: str) -> str:
@@ -1157,17 +1282,7 @@ def _slugify(value: str) -> str:
     return slug or "unknown"
 
 def _source_labels(sources) -> list[str]:
-    """
-    Existing consumers of `knowledge["sources"]` (stakeholders, graph
-    nodes) expect a flat list of strings — that's the contract their
-    frontend types (`Stakeholder.evidence?: string[]`,
-    `RelationshipNode.evidence: string[]`) were already built against.
-    Since the ResearchAgentV2 evidence fix (app/utils/evidence.py) now
-    populates `sources` with real {title, url} objects instead of an
-    empty list, this converts them to readable strings so those
-    existing screens keep rendering correctly instead of crashing on
-    an object child.
-    """
+   
     labels = []
     for s in sources or []:
         if isinstance(s, dict):
@@ -1280,9 +1395,6 @@ async def company_stakeholders(
     buying_signals = knowledge.get("buying_signals", []) or []
     confidence = knowledge.get("confidence", 0) or 0
 
-    # Fall back to the plain decision_makers list if no structured
-    # contacts were extracted, so the screen isn't empty just because
-    # the source text didn't include emails/phone numbers.
     if not contacts:
         contacts = [
             {"name": _to_text(name), "role": "", "email": "", "phone": ""}

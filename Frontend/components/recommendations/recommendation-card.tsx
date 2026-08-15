@@ -9,8 +9,9 @@ import { Button } from "@/components/ui/button";
 import { ScoreRing } from "@/components/common/score-ring";
 import { workspaceService } from "@/services/workspace.service";
 import { queueService } from "@/services/queue.service";
+import { recommendationsService } from "@/services/recommendations.service";
 import { ApiError } from "@/services/api-client";
-import type { Recommendation, Stakeholder, StrategyOption } from "@/types";
+import type { Recommendation, Stakeholder, StrategyOption, PurposeStrategy } from "@/types";
 import { cn } from "@/lib/utils";
 
 const PRIORITY_VARIANT: Record<string, "success" | "warning" | "danger" | "outline"> = {
@@ -48,6 +49,31 @@ export function RecommendationCard({
   const [executed, setExecuted] = useState(false);
   const [executeError, setExecuteError] = useState<string | null>(null);
 
+
+  const [selectedPurpose, setSelectedPurpose] = useState<string | undefined>();
+  const [purposeStrategy, setPurposeStrategy] = useState<PurposeStrategy | null>(
+    recommendation.purposeStrategy,
+  );
+  const [loadingPurpose, setLoadingPurpose] = useState(false);
+
+  async function handleSelectPurpose(key: string) {
+    if (key === selectedPurpose) return;
+    setSelectedPurpose(key);
+    setLoadingPurpose(true);
+    try {
+      const [updated] = await recommendationsService.list(recommendation.companyId, key);
+      setPurposeStrategy(updated?.purposeStrategy ?? null);
+    } catch {
+      setPurposeStrategy({
+        purpose: key,
+        insufficientEvidence: true,
+        message: "Could not load this outreach type — try again.",
+      });
+    } finally {
+      setLoadingPurpose(false);
+    }
+  }
+
   async function handleExpand() {
     const next = !expanded;
     setExpanded(next);
@@ -74,10 +100,7 @@ export function RecommendationCard({
     setExecuting(true);
     setExecuteError(null);
     try {
-      // Draft generation still goes through the existing, unchanged
-      // approval pipeline (/queue/generate -> pending draft -> human
-      // review -> send). Selecting a strategy above only decides which
-      // approach the human is approving — it never sends anything.
+      
       await queueService.generate(recommendation.analysisId);
       setExecuted(true);
       onExecuted?.(recommendation.companyId);
@@ -120,6 +143,53 @@ export function RecommendationCard({
                 recommendation.nextAction ||
                 "No recommended action available for this account yet."}
             </p>
+
+            {recommendation.availablePurposes.length > 0 && (
+              <div className="pt-1">
+                <p className="mb-1.5 text-[10px] uppercase tracking-wider text-white/30">Outreach Purpose</p>
+                <div className="flex flex-wrap gap-1.5">
+                  {recommendation.availablePurposes.map((p) => (
+                    <button
+                      key={p.key}
+                      type="button"
+                      onClick={() => handleSelectPurpose(p.key)}
+                      className={cn(
+                        "rounded-full border px-2.5 py-1 text-[11px] transition-colors",
+                        selectedPurpose === p.key
+                          ? "border-white/30 bg-white/[0.08] text-white/90"
+                          : "border-white/8 bg-white/[0.02] text-white/45 hover:border-white/15 hover:text-white/70",
+                      )}
+                    >
+                      {p.label}
+                    </button>
+                  ))}
+                </div>
+
+                {loadingPurpose && (
+                  <p className="mt-2 flex items-center gap-1.5 text-[12px] text-white/35">
+                    <Loader2 className="h-3 w-3 animate-spin" /> Matching strategy to this purpose…
+                  </p>
+                )}
+
+                {!loadingPurpose && purposeStrategy && (
+                  <div className="mt-2 rounded-lg border border-white/8 bg-white/[0.02] p-2.5">
+                    {purposeStrategy.insufficientEvidence ? (
+                      <p className="flex items-start gap-1.5 text-[12px] text-amber-400/90">
+                        <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                        {purposeStrategy.message || "Insufficient evidence for this outreach type."}
+                      </p>
+                    ) : (
+                      <>
+                        <p className="text-[12px] font-semibold text-white/85">{purposeStrategy.name}</p>
+                        <p className="mt-0.5 text-[12px] leading-relaxed text-white/55">
+                          {purposeStrategy.description}
+                        </p>
+                      </>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
 
             {!recommendation.evidenceSufficient && (
               <div className="flex items-start gap-1.5 text-[12px] text-amber-400/90">

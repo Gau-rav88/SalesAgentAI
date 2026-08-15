@@ -1,16 +1,21 @@
 import { apiFetch } from "./api-client";
-import type { Recommendation, StrategyOption } from "@/types";
+import type { Recommendation, StrategyOption, OutreachPurposeOption, PurposeStrategy } from "@/types";
 
-/**
- * Raw shape returned by GET /workspace/recommendations
- * (backend/app/api/workspace.py). Real, DB-backed — every field here
- * is derived from an actual AnalysisResult, never invented client-side.
- */
+
 interface StrategyOptionApi {
   key: string;
   name: string;
   description: string;
   recommended: boolean;
+}
+
+interface PurposeStrategyApi {
+  purpose: string;
+  purpose_label?: string;
+  insufficient_evidence: boolean;
+  message?: string;
+  name?: string;
+  description?: string;
 }
 
 interface RecommendationApiResult {
@@ -38,6 +43,8 @@ interface RecommendationApiResult {
   buying_signals: string[];
   evidence: Array<{ title: string; url: string }>;
   evidence_sufficient: boolean;
+  available_purposes: OutreachPurposeOption[];
+  purpose_strategy: PurposeStrategyApi | null;
   created_at: string;
 }
 
@@ -67,14 +74,28 @@ function toRecommendation(raw: RecommendationApiResult): Recommendation {
     buyingSignals: raw.buying_signals || [],
     evidence: raw.evidence || [],
     evidenceSufficient: raw.evidence_sufficient ?? false,
+    availablePurposes: raw.available_purposes || [],
+    purposeStrategy: raw.purpose_strategy
+      ? ({
+          purpose: raw.purpose_strategy.purpose,
+          purposeLabel: raw.purpose_strategy.purpose_label,
+          insufficientEvidence: raw.purpose_strategy.insufficient_evidence,
+          message: raw.purpose_strategy.message,
+          name: raw.purpose_strategy.name,
+          description: raw.purpose_strategy.description,
+        } as PurposeStrategy)
+      : null,
     createdAt: raw.created_at,
   };
 }
 
 export const recommendationsService = {
-  /** Every company's most recent analysis, scored and ranked, optionally scoped to one company. */
-  async list(companyId?: string | number): Promise<Recommendation[]> {
-    const qs = companyId ? `?company_id=${companyId}` : "";
+ 
+  async list(companyId?: string | number, purpose?: string): Promise<Recommendation[]> {
+    const params = new URLSearchParams();
+    if (companyId) params.set("company_id", String(companyId));
+    if (purpose) params.set("purpose", purpose);
+    const qs = params.toString() ? `?${params.toString()}` : "";
     const data = await apiFetch<{ recommended_companies: RecommendationApiResult[] }>(
       `/workspace/recommendations${qs}`,
     );

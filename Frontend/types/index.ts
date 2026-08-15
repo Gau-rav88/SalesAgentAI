@@ -98,11 +98,7 @@ export interface ChatMessage {
   role: "user" | "assistant" | "system";
   content: string;
   timestamp: string;
-  /**
-   * Optional presentation kind for the AI Workspace's live conversation.
-   * Defaults to a plain text bubble when omitted, so existing consumers
-   * (mock data, other screens) are unaffected.
-   */
+  
   kind?: "text" | "loading" | "stream" | "report";
   /** Chip labels shown under a user message, e.g. attached files/sources. */
   attachments?: string[];
@@ -141,6 +137,20 @@ export interface StrategyOption {
   recommended: boolean;
 }
 
+export interface OutreachPurposeOption {
+  key: string;
+  label: string;
+}
+
+export interface PurposeStrategy {
+  purpose: string;
+  purposeLabel?: string;
+  insufficientEvidence: boolean;
+  message?: string;
+  name?: string;
+  description?: string;
+}
+
 export interface Recommendation {
   analysisId: string;
   companyId: string;
@@ -166,6 +176,10 @@ export interface Recommendation {
   buyingSignals: string[];
   evidence: Array<{ title: string; url: string }>;
   evidenceSufficient: boolean;
+  /** Outreach purposes that make sense for THIS account's real evidence — never every type on every account. */
+  availablePurposes: OutreachPurposeOption[];
+  /** Only present when a purpose was requested via recommendationsService.list(companyId, purpose). */
+  purposeStrategy: PurposeStrategy | null;
   createdAt: string;
 }
 
