@@ -6,8 +6,9 @@ export const queueService = {
     return apiFetch<OutreachDraft[]>("/queue/");
   },
 
-  async generate(analysisId: number | string): Promise<OutreachDraft> {
-    return apiFetch<OutreachDraft>(`/queue/generate/${analysisId}`, {
+  async generate(analysisId: number | string, purpose?: string): Promise<OutreachDraft> {
+    const qs = purpose ? `?${new URLSearchParams({ purpose }).toString()}` : "";
+    return apiFetch<OutreachDraft>(`/queue/generate/${analysisId}${qs}`, {
       method: "POST",
     });
   },

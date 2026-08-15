@@ -5,11 +5,17 @@ from googleapiclient.errors import HttpError
 from app.auth.dependencies import get_current_user
 from app.database.session import get_db
 from app.models.analysis_result import AnalysisResult
+from app.models.knowledge_source import KnowledgeSource
 from app.models.user import User
 from app.services.outreach_service import OutreachService
 from app.models.connected_account import ConnectedAccount
 from app.schemas.send_email import SendEmailRequest
 from app.services.gmail_service import GmailService
+from app.api.workspace import (
+    _applicable_purposes,
+    _intent_level,
+    _purpose_strategy,
+)
 
 router = APIRouter(
     prefix="/queue",
@@ -55,6 +61,7 @@ async def list_queue(
 @router.post("/generate/{analysis_id}")
 async def generate_draft(
     analysis_id: int,
+    purpose: str | None = None,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
@@ -70,7 +77,43 @@ async def generate_draft(
     if analysis is None:
         raise HTTPException(status_code=404, detail="Analysis not found")
 
-    draft = service.generate_from_analysis(db, current_user, analysis)
+    # If the user explicitly picked an outreach purpose in the UI, resolve
+    # it against this account's real evidence (same logic the recommendations
+    # preview uses) so the generated draft actually reflects that choice —
+    # nothing here invents new evidence, it only selects which already-real
+    # signals to lead with.
+    purpose_strategy = None
+    if purpose:
+        knowledge_source = (
+            db.query(KnowledgeSource)
+            .filter(KnowledgeSource.id == analysis.knowledge_id)
+            .first()
+        )
+        knowledge = (
+            (knowledge_source.processed_data.get("knowledge", {}) if knowledge_source else {})
+            or {}
+        )
+        persona = analysis.persona or {}
+        decision_maker = persona.get("primary_decision_maker", "") or ""
+        pain_points = knowledge.get("pain_points") or []
+        buying_signals = knowledge.get("buying_signals") or []
+        sources = knowledge.get("sources") or []
+        intent_score = (analysis.intent or {}).get("intent_score", 0)
+        level = _intent_level(intent_score)
+        applicable = _applicable_purposes(
+            knowledge, persona, decision_maker, pain_points, buying_signals, sources
+        )
+        purpose_strategy = _purpose_strategy(
+            purpose,
+            level,
+            analysis.company.name if analysis.company else "",
+            decision_maker,
+            pain_points,
+            buying_signals,
+            applicable,
+        )
+
+    draft = service.generate_from_analysis(db, current_user, analysis, purpose_strategy=purpose_strategy)
 
     return _serialize(draft, draft.company.name if draft.company else "")
 

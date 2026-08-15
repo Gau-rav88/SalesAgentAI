@@ -11,7 +11,7 @@ import { workspaceService } from "@/services/workspace.service";
 import { queueService } from "@/services/queue.service";
 import { recommendationsService } from "@/services/recommendations.service";
 import { ApiError } from "@/services/api-client";
-import type { Recommendation, Stakeholder, StrategyOption, PurposeStrategy } from "@/types";
+import type { Recommendation, Stakeholder, PurposeStrategy } from "@/types";
 import { cn } from "@/lib/utils";
 
 const PRIORITY_VARIANT: Record<string, "success" | "warning" | "danger" | "outline"> = {
@@ -38,39 +38,52 @@ export function RecommendationCard({
   const [loadingDetails, setLoadingDetails] = useState(false);
   const [detailsError, setDetailsError] = useState<string | null>(null);
 
-  // The strategy the user has selected from this account's intent-tier
-  // options — defaults to the AI's recommended one, but nothing is
-  // executed until the user confirms it via "Approve & Generate Draft".
-  const [selectedStrategyKey, setSelectedStrategyKey] = useState<string | undefined>(
-    recommendation.recommendedStrategy?.key,
-  );
-
   const [executing, setExecuting] = useState(false);
   const [executed, setExecuted] = useState(false);
   const [executeError, setExecuteError] = useState<string | null>(null);
 
+  // First applicable purpose is the account's real, evidence-backed
+  // default (backend orders it that way) — everything else is an
+  // equally valid alternative the user can switch to before approving.
+  const recommendedPurpose = recommendation.availablePurposes[0];
+  const otherPurposes = recommendation.availablePurposes.slice(1);
 
-  const [selectedPurpose, setSelectedPurpose] = useState<string | undefined>();
-  const [purposeStrategy, setPurposeStrategy] = useState<PurposeStrategy | null>(
-    recommendation.purposeStrategy,
+  // The purpose the user has selected — nothing is generated until they
+  // confirm it via "Approve & Generate Draft". Defaults to the
+  // recommended purpose so approving immediately still works.
+  const [selectedPurpose, setSelectedPurpose] = useState<string | undefined>(
+    recommendedPurpose?.key,
+  );
+  const [strategyByPurpose, setStrategyByPurpose] = useState<Record<string, PurposeStrategy | null>>(
+    recommendation.purposeStrategy && recommendedPurpose
+      ? { [recommendedPurpose.key]: recommendation.purposeStrategy }
+      : {},
   );
   const [loadingPurpose, setLoadingPurpose] = useState(false);
 
-  async function handleSelectPurpose(key: string) {
-    if (key === selectedPurpose) return;
-    setSelectedPurpose(key);
+  async function loadPurposeStrategy(key: string) {
     setLoadingPurpose(true);
     try {
       const [updated] = await recommendationsService.list(recommendation.companyId, key);
-      setPurposeStrategy(updated?.purposeStrategy ?? null);
+      setStrategyByPurpose((prev) => ({ ...prev, [key]: updated?.purposeStrategy ?? null }));
     } catch {
-      setPurposeStrategy({
-        purpose: key,
-        insufficientEvidence: true,
-        message: "Could not load this outreach type — try again.",
-      });
+      setStrategyByPurpose((prev) => ({
+        ...prev,
+        [key]: {
+          purpose: key,
+          insufficientEvidence: true,
+          message: "Could not load this outreach type — try again.",
+        },
+      }));
     } finally {
       setLoadingPurpose(false);
+    }
+  }
+
+  async function handleSelectPurpose(key: string) {
+    setSelectedPurpose(key);
+    if (strategyByPurpose[key] === undefined) {
+      await loadPurposeStrategy(key);
     }
   }
 
@@ -94,14 +107,19 @@ export function RecommendationCard({
         setLoadingDetails(false);
       }
     }
+
+    // Lazy-load the recommended purpose's strategy the first time the
+    // card is expanded, so the selector isn't empty on first look.
+    if (next && recommendedPurpose && strategyByPurpose[recommendedPurpose.key] === undefined) {
+      loadPurposeStrategy(recommendedPurpose.key);
+    }
   }
 
   async function handleExecute() {
     setExecuting(true);
     setExecuteError(null);
     try {
-      
-      await queueService.generate(recommendation.analysisId);
+      await queueService.generate(recommendation.analysisId, selectedPurpose);
       setExecuted(true);
       onExecuted?.(recommendation.companyId);
     } catch (err) {
@@ -114,11 +132,6 @@ export function RecommendationCard({
       setExecuting(false);
     }
   }
-
-  const selectedOption: StrategyOption | undefined =
-    recommendation.strategyOptions.find((o) => o.key === selectedStrategyKey) ??
-    recommendation.recommendedStrategy ??
-    undefined;
 
   return (
     <motion.div layout initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}>
@@ -144,51 +157,15 @@ export function RecommendationCard({
                 "No recommended action available for this account yet."}
             </p>
 
-            {recommendation.availablePurposes.length > 0 && (
-              <div className="pt-1">
-                <p className="mb-1.5 text-[10px] uppercase tracking-wider text-white/30">Outreach Purpose</p>
-                <div className="flex flex-wrap gap-1.5">
-                  {recommendation.availablePurposes.map((p) => (
-                    <button
-                      key={p.key}
-                      type="button"
-                      onClick={() => handleSelectPurpose(p.key)}
-                      className={cn(
-                        "rounded-full border px-2.5 py-1 text-[11px] transition-colors",
-                        selectedPurpose === p.key
-                          ? "border-white/30 bg-white/[0.08] text-white/90"
-                          : "border-white/8 bg-white/[0.02] text-white/45 hover:border-white/15 hover:text-white/70",
-                      )}
-                    >
-                      {p.label}
-                    </button>
-                  ))}
-                </div>
-
-                {loadingPurpose && (
-                  <p className="mt-2 flex items-center gap-1.5 text-[12px] text-white/35">
-                    <Loader2 className="h-3 w-3 animate-spin" /> Matching strategy to this purpose…
-                  </p>
-                )}
-
-                {!loadingPurpose && purposeStrategy && (
-                  <div className="mt-2 rounded-lg border border-white/8 bg-white/[0.02] p-2.5">
-                    {purposeStrategy.insufficientEvidence ? (
-                      <p className="flex items-start gap-1.5 text-[12px] text-amber-400/90">
-                        <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-                        {purposeStrategy.message || "Insufficient evidence for this outreach type."}
-                      </p>
-                    ) : (
-                      <>
-                        <p className="text-[12px] font-semibold text-white/85">{purposeStrategy.name}</p>
-                        <p className="mt-0.5 text-[12px] leading-relaxed text-white/55">
-                          {purposeStrategy.description}
-                        </p>
-                      </>
-                    )}
-                  </div>
-                )}
-              </div>
+            {/* Compact indicator only — the full selector lives in the expanded panel below. */}
+            {recommendedPurpose && (
+              <p className="flex items-center gap-1.5 pt-0.5 text-[11px] text-white/35">
+                <span className="text-white/25">Recommended purpose:</span>
+                <span className="text-white/60">
+                  {recommendation.availablePurposes.find((p) => p.key === selectedPurpose)?.label ??
+                    recommendedPurpose.label}
+                </span>
+              </p>
             )}
 
             {!recommendation.evidenceSufficient && (
@@ -250,40 +227,44 @@ export function RecommendationCard({
             animate={{ opacity: 1, height: "auto" }}
             className="border-t border-white/6 bg-white/[0.015] px-5 py-4"
           >
-            {/* Recommended outreach strategy — a choice, not an automatic action */}
-            {recommendation.strategyOptions.length > 0 && (
+            {/* Outreach purpose selector — a choice, not an automatic action. Exactly
+                one option is the AI's recommendation; the rest are equally valid
+                alternatives given this account's real evidence. */}
+            {recommendation.availablePurposes.length > 0 && recommendedPurpose && (
               <div className="mb-5">
                 <p className="mb-2 text-[10px] uppercase tracking-wider text-white/30">
-                  Recommended Strategy — select before approving
+                  Outreach Purpose — select before approving
                 </p>
-                <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
-                  {recommendation.strategyOptions.map((option) => {
-                    const isSelected = option.key === selectedOption?.key;
-                    return (
-                      <button
-                        key={option.key}
-                        type="button"
-                        onClick={() => setSelectedStrategyKey(option.key)}
-                        className={cn(
-                          "rounded-lg border p-3 text-left transition-colors",
-                          isSelected
-                            ? "border-white/30 bg-white/[0.06]"
-                            : "border-white/8 bg-white/[0.015] hover:border-white/15",
-                        )}
-                      >
-                        <div className="flex items-center justify-between gap-2">
-                          <p className="text-[12px] font-medium text-white/85">{option.name}</p>
-                          {option.recommended && (
-                            <Badge variant="outline" className="shrink-0 text-[10px]">
-                              AI pick
-                            </Badge>
-                          )}
-                        </div>
-                        <p className="mt-1 text-[11px] leading-relaxed text-white/45">{option.description}</p>
-                      </button>
-                    );
-                  })}
+
+                <div className="space-y-2">
+                  <p className="text-[10px] uppercase tracking-wider text-white/25">Recommended</p>
+                  <PurposeOptionCard
+                    option={recommendedPurpose}
+                    isSelected={selectedPurpose === recommendedPurpose.key}
+                    strategy={strategyByPurpose[recommendedPurpose.key]}
+                    loading={loadingPurpose && selectedPurpose === recommendedPurpose.key}
+                    onSelect={() => handleSelectPurpose(recommendedPurpose.key)}
+                    recommended
+                  />
                 </div>
+
+                {otherPurposes.length > 0 && (
+                  <div className="mt-3 space-y-2">
+                    <p className="text-[10px] uppercase tracking-wider text-white/25">Other Valid Options</p>
+                    <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                      {otherPurposes.map((option) => (
+                        <PurposeOptionCard
+                          key={option.key}
+                          option={option}
+                          isSelected={selectedPurpose === option.key}
+                          strategy={strategyByPurpose[option.key]}
+                          loading={loadingPurpose && selectedPurpose === option.key}
+                          onSelect={() => handleSelectPurpose(option.key)}
+                        />
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
             )}
 
@@ -322,7 +303,18 @@ export function RecommendationCard({
                     {recommendation.evidence.slice(0, 5).map((e, i) => (
                       <li key={i} className="flex items-start gap-1.5">
                         <ExternalLink className="mt-0.5 h-3 w-3 shrink-0 text-white/25" />
-                        <span>{e.title || e.url}</span>
+                        {e.url ? (
+                          <a
+                            href={e.url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="underline decoration-white/20 underline-offset-2 hover:text-white/80 hover:decoration-white/40"
+                          >
+                            {e.title || e.url}
+                          </a>
+                        ) : (
+                          <span>{e.title || "Untitled source"}</span>
+                        )}
                       </li>
                     ))}
                   </ul>
@@ -385,3 +377,65 @@ export function RecommendationCard({
   );
 }
 
+function PurposeOptionCard({
+  option,
+  isSelected,
+  strategy,
+  loading,
+  onSelect,
+  recommended = false,
+}: {
+  option: { key: string; label: string };
+  isSelected: boolean;
+  strategy: PurposeStrategy | null | undefined;
+  loading: boolean;
+  onSelect: () => void;
+  recommended?: boolean;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onSelect}
+      className={cn(
+        "w-full rounded-lg border p-3 text-left transition-colors",
+        isSelected
+          ? "border-white/30 bg-white/[0.06]"
+          : "border-white/8 bg-white/[0.015] hover:border-white/15",
+      )}
+    >
+      <div className="flex items-center justify-between gap-2">
+        <p className="text-[12px] font-medium text-white/85">{option.label}</p>
+        <div className="flex items-center gap-1.5">
+          {recommended && (
+            <Badge variant="outline" className="shrink-0 text-[10px]">
+              AI pick
+            </Badge>
+          )}
+          {isSelected && <Check className="h-3.5 w-3.5 shrink-0 text-white/50" />}
+        </div>
+      </div>
+
+      {isSelected && (
+        <div className="mt-1.5">
+          {loading && (
+            <p className="flex items-center gap-1.5 text-[11px] text-white/35">
+              <Loader2 className="h-3 w-3 animate-spin" /> Matching strategy to this purpose…
+            </p>
+          )}
+          {!loading && strategy?.insufficientEvidence && (
+            <p className="flex items-start gap-1.5 text-[11px] text-amber-400/90">
+              <AlertTriangle className="mt-0.5 h-3 w-3 shrink-0" />
+              {strategy.message || "Insufficient evidence for this outreach type."}
+            </p>
+          )}
+          {!loading && strategy && !strategy.insufficientEvidence && (
+            <>
+              <p className="text-[11px] font-semibold text-white/75">{strategy.name}</p>
+              <p className="mt-0.5 text-[11px] leading-relaxed text-white/50">{strategy.description}</p>
+            </>
+          )}
+        </div>
+      )}
+    </button>
+  );
+}

@@ -66,6 +66,7 @@ class OutreachService:
         db: Session,
         current_user: User,
         analysis: AnalysisResult,
+        purpose_strategy: dict | None = None,
     ) -> OutreachDraft:
 
         persona = analysis.persona or {}
@@ -89,6 +90,20 @@ class OutreachService:
             body = "\n".join(str(item) for item in body)
         if not body:
             body = next_action
+
+        # A purpose the user explicitly selected in the UI (e.g. "Product
+        # Demo" vs "Strategic Partnership") re-frames the opening line and
+        # subject around that purpose — using only the same real evidence
+        # already backing this account, never inventing anything new.
+        if purpose_strategy and not purpose_strategy.get("insufficient_evidence"):
+            purpose_name = purpose_strategy.get("name")
+            purpose_description = purpose_strategy.get("description")
+            if purpose_name:
+                subject = f"{purpose_strategy.get('purpose_label', purpose_name)}: {subject}"
+                if len(subject) > 120:
+                    subject = subject[:117] + "..."
+            if purpose_description:
+                body = f"{purpose_description}\n\n{body}"
 
         sender_display_name = _display_name_from_username(current_user.username)
 
