@@ -1,5 +1,5 @@
 # ProspectIQ — AI Decision Intelligence Platform for Enterprise Sales
-
+![alt text](image.png)
 ProspectIQ turns scattered company research into an evidence-backed, human-approved
 outreach plan. A supervised multi-agent pipeline ingests whatever you give it — a
 company brief, notes, a website — extracts structured knowledge, builds a buyer
