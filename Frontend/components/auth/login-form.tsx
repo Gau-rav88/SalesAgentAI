@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useRef, useEffect } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Loader2 } from "lucide-react";
@@ -13,6 +13,7 @@ import { authService } from "@/services/auth.service";
 import { ApiError } from "@/services/api-client";
 import { GoogleLogin } from "@react-oauth/google";
 
+
 export function LoginForm() {
   const router = useRouter();
   const [email, setEmail] = useState("");
@@ -20,6 +21,15 @@ export function LoginForm() {
   const [remember, setRemember] = useState(true);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const googleBtnWrapperRef = useRef<HTMLDivElement>(null);
+  const [googleBtnWidth, setGoogleBtnWidth] = useState(360);
+
+  useEffect(() => {
+    if (googleBtnWrapperRef.current) {
+      setGoogleBtnWidth(googleBtnWrapperRef.current.offsetWidth);
+    }
+  }, []);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -105,22 +115,30 @@ export function LoginForm() {
         <Separator className="flex-1" />
       </div>
 
-      <GoogleLogin
-        onSuccess={async (credentialResponse) => {
-          if (!credentialResponse.credential) return;
+      <div ref={googleBtnWrapperRef} className="flex justify-center [&>div]:!w-full">
+        <GoogleLogin
+          onSuccess={async (credentialResponse) => {
+            if (!credentialResponse.credential) return;
 
-          try {
-            await authService.googleLogin(credentialResponse.credential);
+            try {
+              await authService.googleLogin(credentialResponse.credential);
 
-            router.push("/workspace");
-          } catch {
+              router.push("/workspace");
+            } catch {
+              setError("Google authentication failed.");
+            }
+          }}
+          onError={() => {
             setError("Google authentication failed.");
-          }
-        }}
-        onError={() => {
-          setError("Google authentication failed.");
-        }}
-      />
+          }}
+          theme="filled_black"
+          shape="pill"
+          size="large"
+          text="continue_with"
+          logo_alignment="center"
+          width={googleBtnWidth}
+        />
+      </div>
 
       <p className="pt-2 text-center text-[11px] text-white/30">
         Don&apos;t have an account?{" "}
