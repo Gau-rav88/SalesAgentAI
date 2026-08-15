@@ -13,6 +13,7 @@ const STATUS_DOT: Record<OutreachDraft["status"], string> = {
   approved: "bg-emerald-400",
   rejected: "bg-red-400",
   edited: "bg-white/40",
+  sent: "bg-emerald-400",
 };
 
 export default function QueuePage() {
@@ -57,6 +58,22 @@ export default function QueuePage() {
   async function handleReject(id: string) {
     const updated = await queueService.reject(id);
     setDrafts((prev) => prev.map((d) => (d.id === id ? updated : d)));
+  }
+
+
+  async function handleDelete(id: string) {
+    await queueService.deleteDraft(id);
+    setDrafts((prev) => prev.filter((d) => d.id !== id));
+    if (selectedId === id) setSelectedId(null);
+  }
+
+  async function handleSent(updated: OutreachDraft) {
+    setDrafts((prev) => prev.map((d) => (d.id === updated.id ? updated : d)));
+  }
+
+  async function handleFollowupCreated(followup: OutreachDraft) {
+    setDrafts((prev) => [followup, ...prev]);
+    setSelectedId(followup.id);
   }
 
   const selectedIndex = drafts.findIndex((d) => d.id === selectedId);
@@ -126,14 +143,17 @@ export default function QueuePage() {
 
           {selectedDraft && (
             <OutreachReviewPanel
-              draft={selectedDraft}
-              index={selectedIndex}
-              total={drafts.length}
-              onPrev={goPrev}
-              onNext={goNext}
-              onApprove={handleApprove}
-              onReject={handleReject}
-            />
+            draft={selectedDraft}
+            index={selectedIndex}
+            total={drafts.length}
+            onPrev={goPrev}
+            onNext={goNext}
+            onApprove={handleApprove}
+            onReject={handleReject}
+            onDelete={handleDelete}
+            onSent={handleSent}
+            onFollowupCreated={handleFollowupCreated}
+          />
           )}
         </div>
       )}

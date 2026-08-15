@@ -197,7 +197,7 @@ export interface OutreachDraft {
   confidence: number;
   reasoning: string;
   evidence: string[];
-  status: "pending" | "approved" | "rejected" | "edited";
+  status: "pending" | "approved" | "rejected" | "edited" | "sent";
   createdAt: string;
 }
 

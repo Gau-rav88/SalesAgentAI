@@ -37,10 +37,28 @@ export const queueService = {
     recipient: string,
     subject: string,
     body: string
-  ): Promise<{ success: boolean; message: string }> {
+  ): Promise<{ success: boolean; message: string; draft: OutreachDraft }> {
     return apiFetch(`/queue/${draftId}/send`, {
       method: "POST",
       body: JSON.stringify({ recipient, subject, body }),
+    });
+  },
+
+  async deleteDraft(draftId: string): Promise<{ success: boolean; deleted_id: number }> {
+    return apiFetch(`/queue/${draftId}`, {
+      method: "DELETE",
+    });
+  },
+
+  async createFollowup(draftId: string): Promise<OutreachDraft> {
+    return apiFetch<OutreachDraft>(`/queue/${draftId}/followup`, {
+      method: "POST",
+    });
+  },
+
+  async disconnectGmail(): Promise<{ connected: boolean; email: string | null }> {
+    return apiFetch(`/auth/google/disconnect`, {
+      method: "POST",
     });
   },
 

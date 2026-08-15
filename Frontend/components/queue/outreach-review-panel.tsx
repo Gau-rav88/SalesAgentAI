@@ -31,6 +31,9 @@ export function OutreachReviewPanel({
   onNext,
   onApprove,
   onReject,
+  onDelete,
+  onSent,
+  onFollowupCreated,
 }: {
   draft: OutreachDraft;
   index: number;
@@ -39,6 +42,9 @@ export function OutreachReviewPanel({
   onNext: () => void;
   onApprove: (id: string) => Promise<void>;
   onReject: (id: string) => Promise<void>;
+  onDelete: (id: string) => Promise<void>;
+  onSent: (updated: OutreachDraft) => Promise<void>;
+  onFollowupCreated: (followup: OutreachDraft) => Promise<void>;
 }) {
   const [pendingAction, setPendingAction] = useState<
     "approve" | "reject" | null
@@ -85,6 +91,23 @@ export function OutreachReviewPanel({
     }
   }
 
+  async function handleDisconnectGmail() {
+    if (!confirm(`Disconnect ${connectedEmail}? You won't be able to send until you reconnect.`)) {
+      return;
+    }
+
+    try {
+      await queueService.disconnectGmail();
+
+      setSenderConnected(false);
+      setConnectedEmail("");
+    } catch (err) {
+      console.error(err);
+
+      alert("Failed to disconnect Gmail.");
+    }
+  }
+
   async function handleApprove() {
     setPendingAction("approve");
     try {
@@ -105,9 +128,9 @@ export function OutreachReviewPanel({
 
   const handleApproveAndSend = async () => {
     try {
-      await queueService.sendEmail(draft.id, recipient, subject, body);
+      const result = await queueService.sendEmail(draft.id, recipient, subject, body);
 
-      await handleApprove();
+      await onSent(result.draft);
 
       alert("Email sent successfully!");
     } catch (err) {
@@ -116,6 +139,34 @@ export function OutreachReviewPanel({
       alert("Failed to send email.");
     }
   };
+
+  async function handleDeleteDraft() {
+    if (!confirm(`Delete this draft for ${draft.stakeholderName}? This can't be undone.`)) {
+      return;
+    }
+
+    try {
+      await onDelete(draft.id);
+    } catch (err) {
+      console.error(err);
+
+      alert("Failed to delete draft.");
+    }
+  }
+
+  async function handleCreateFollowup() {
+    try {
+      const followup = await queueService.createFollowup(draft.id);
+
+      await onFollowupCreated(followup);
+
+      alert("Follow-up draft created and added to your queue.");
+    } catch (err) {
+      console.error(err);
+
+      alert("Failed to create follow-up draft.");
+    }
+  }
 
   return (
     <div className="space-y-4">
@@ -167,13 +218,15 @@ export function OutreachReviewPanel({
                 </div>
                 <Badge
                   variant={
-                    draft.status === "approved"
+                    draft.status === "sent"
                       ? "success"
-                      : draft.status === "rejected"
-                        ? "danger"
-                        : draft.status === "edited"
-                          ? "outline"
-                          : "warning"
+                      : draft.status === "approved"
+                        ? "success"
+                        : draft.status === "rejected"
+                          ? "danger"
+                          : draft.status === "edited"
+                            ? "outline"
+                            : "warning"
                   }
                 >
                   {draft.status}
@@ -189,9 +242,12 @@ export function OutreachReviewPanel({
                     {senderConnected ? (
                       <div className="mt-1 flex items-center justify-between rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-sm text-emerald-400">
                         <span>{connectedEmail}</span>
-                        <span className="text-xs font-medium text-emerald-500">
-                          Connected
-                        </span>
+                        <button
+                          onClick={handleDisconnectGmail}
+                          className="text-xs font-medium text-emerald-500 underline decoration-dotted hover:text-emerald-400"
+                        >
+                          Disconnect
+                        </button>
                       </div>
                     ) : (
                       <button
@@ -287,40 +343,62 @@ export function OutreachReviewPanel({
               </div>
             </Card>
 
-            {draft.status === "pending" || draft.status === "edited" ? (
-              <div className="flex justify-end gap-2">
-                <Button
-                  variant="outline"
-                  onClick={handleReject}
-                  disabled={pendingAction !== null}
-                >
-                  {pendingAction === "reject" ? (
-                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                  ) : (
-                    <X className="h-3.5 w-3.5" />
-                  )}
-                  Reject
+            {draft.status === "sent" ? (
+              <div className="flex items-center justify-between rounded-lg border border-emerald-500/20 bg-emerald-500/5 px-4 py-3">
+                <p className="text-[11px] text-emerald-400">
+                  ✓ Already sent to {draft.stakeholderEmail}. Want to follow up?
+                </p>
+                <div className="flex items-center gap-2">
+                  <Button size="sm" onClick={handleCreateFollowup}>
+                    Draft a follow-up
+                  </Button>
+                  <Button variant="outline" size="sm" onClick={handleDeleteDraft}>
+                    Delete
+                  </Button>
+                </div>
+              </div>
+            ) : draft.status === "pending" || draft.status === "edited" ? (
+              <div className="flex items-center justify-between gap-2">
+                <Button variant="outline" size="sm" onClick={handleDeleteDraft}>
+                  Delete draft
                 </Button>
-                <Button
-                  disabled={
-                    !recipient || !senderConnected || pendingAction !== null
-                  }
-                  onClick={handleApproveAndSend}
-                >
-                  {pendingAction === "approve" ? (
-                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                  ) : (
-                    <Check className="h-3.5 w-3.5" />
-                  )}
-                  Approve & Send
-                </Button>
+                <div className="flex gap-2">
+                  <Button
+                    variant="outline"
+                    onClick={handleReject}
+                    disabled={pendingAction !== null}
+                  >
+                    {pendingAction === "reject" ? (
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    ) : (
+                      <X className="h-3.5 w-3.5" />
+                    )}
+                    Reject
+                  </Button>
+                  <Button
+                    disabled={
+                      !recipient || !senderConnected || pendingAction !== null
+                    }
+                    onClick={handleApproveAndSend}
+                  >
+                    {pendingAction === "approve" ? (
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    ) : (
+                      <Check className="h-3.5 w-3.5" />
+                    )}
+                    Approve & Send
+                  </Button>
+                </div>
               </div>
             ) : (
-              <p className="text-right text-[11px] text-white/25">
-                {draft.status === "approved"
-                  ? "Approved — ready for manual send"
-                  : "Rejected"}
-              </p>
+              <div className="flex items-center justify-between">
+                <p className="text-[11px] text-white/25">
+                  {draft.status === "approved" ? "Approved — ready for manual send" : "Rejected"}
+                </p>
+                <Button variant="outline" size="sm" onClick={handleDeleteDraft}>
+                  Delete draft
+                </Button>
+              </div>
             )}
           </div>
 
