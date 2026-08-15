@@ -6,6 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ScoreRing } from "@/components/common/score-ring";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { GuardrailVerdict } from "@/components/workspace/guardrail-verdict";
 import { accountsService } from "@/services/accounts.service";
 import type { Company } from "@/types";
 import type { OverallAssessment, KnowledgeData } from "@/services/workspace.service";
@@ -13,17 +14,19 @@ import type { OverallAssessment, KnowledgeData } from "@/services/workspace.serv
 interface ExecutiveBriefPanelProps {
   assessment: OverallAssessment | null;
   knowledge: KnowledgeData | null;
+  /** Raw guardrail agent output (unsupported_claims, supported_claims, confidence, reasoning). */
+  guardrail?: Record<string, unknown> | null;
 }
 
-export function ExecutiveBriefPanel({ assessment, knowledge }: ExecutiveBriefPanelProps) {
+export function ExecutiveBriefPanel({ assessment, knowledge, guardrail }: ExecutiveBriefPanelProps) {
   if (!assessment) {
     return (
       <Card>
         <CardHeader>
-          <CardTitle>Executive Brief</CardTitle>
+          <CardTitle className="text-[15px]">Executive Brief</CardTitle>
         </CardHeader>
         <CardContent>
-          <p className="text-[13px] leading-relaxed text-white/40">
+          <p className="text-[14px] leading-relaxed text-white/40">
             No analysis yet. Send a company brief or notes in the chat and the executive summary will
             appear here once the pipeline finishes.
           </p>
@@ -33,38 +36,55 @@ export function ExecutiveBriefPanel({ assessment, knowledge }: ExecutiveBriefPan
   }
 
   const score = Math.round((assessment.intent_score ?? 0) * (assessment.intent_score <= 1 ? 100 : 1));
+  const unsupportedClaims = (guardrail?.unsupported_claims as string[] | undefined) ?? [];
+  const supportedClaims = (guardrail?.supported_claims as string[] | undefined) ?? [];
+  const guardrailConfidence = guardrail?.confidence as number | undefined;
+  const guardrailReasoning = guardrail?.reasoning as string | undefined;
 
   return (
-    <Card>
-      <CardHeader className="flex flex-row items-center justify-between space-y-0">
-        <CardTitle>Executive Brief — {assessment.company || knowledge?.company || "Unknown"}</CardTitle>
-        <ScoreRing score={score} size={54} label="" />
-      </CardHeader>
-      <CardContent className="space-y-3">
-        <p className="text-[13px] leading-relaxed text-white/50">
-          {assessment.overall_recommendation || "No recommendation returned by the guardrail agent."}
-        </p>
-        <div className="flex flex-wrap gap-2">
-          {assessment.risk_level && (
-            <Badge variant={assessment.risk_level.toLowerCase() === "high" ? "danger" : "outline"}>
-              {assessment.risk_level} risk
-            </Badge>
-          )}
-          {assessment.approved ? (
-            <Badge variant="success">Approved</Badge>
-          ) : (
-            <Badge variant="danger">Needs review</Badge>
-          )}
-          {assessment.buying_stage && <Badge variant="outline">{assessment.buying_stage}</Badge>}
-          {assessment.decision_maker && <Badge variant="outline">{assessment.decision_maker}</Badge>}
-        </div>
-        {assessment.next_action && (
-          <p className="text-xs text-white/40">
-            Next action: <span className="text-white/70">{assessment.next_action}</span>
+    <div className="space-y-4">
+      <Card>
+        <CardHeader className="flex flex-row items-center justify-between space-y-0">
+          <CardTitle className="text-[15px]">
+            Executive Brief — {assessment.company || knowledge?.company || "Unknown"}
+          </CardTitle>
+          <ScoreRing score={score} size={54} label="" />
+        </CardHeader>
+        <CardContent className="space-y-3.5">
+          <p className="text-[14px] leading-relaxed text-white/55">
+            {assessment.overall_recommendation || "No recommendation returned by the guardrail agent."}
           </p>
-        )}
-      </CardContent>
-    </Card>
+          <div className="flex flex-wrap gap-2">
+            {assessment.risk_level && (
+              <Badge variant={assessment.risk_level.toLowerCase() === "high" ? "danger" : "outline"}>
+                {assessment.risk_level} risk
+              </Badge>
+            )}
+            {assessment.approved ? (
+              <Badge variant="success">Approved</Badge>
+            ) : (
+              <Badge variant="danger">Needs review</Badge>
+            )}
+            {assessment.buying_stage && <Badge variant="outline">{assessment.buying_stage}</Badge>}
+            {assessment.decision_maker && <Badge variant="outline">{assessment.decision_maker}</Badge>}
+          </div>
+          {assessment.next_action && (
+            <p className="text-[13px] text-white/45">
+              Next action: <span className="text-white/75">{assessment.next_action}</span>
+            </p>
+          )}
+        </CardContent>
+      </Card>
+
+      <GuardrailVerdict
+        approved={assessment.approved}
+        riskLevel={assessment.risk_level}
+        unsupportedClaims={unsupportedClaims}
+        supportedClaims={supportedClaims}
+        confidence={guardrailConfidence}
+        reasoning={guardrailReasoning}
+      />
+    </div>
   );
 }
 
@@ -100,16 +120,16 @@ export function HistorySidebar({
   }, []);
 
   return (
-    <Card className="flex h-full flex-col">
+    <Card className="flex h-full min-h-0 flex-col">
       <CardHeader>
-        <CardTitle>Recent Sessions</CardTitle>
+        <CardTitle className="text-[15px]">Recent Sessions</CardTitle>
       </CardHeader>
-      <ScrollArea className="flex-1 px-2 pb-4">
+      <ScrollArea className="min-h-0 flex-1 px-2 pb-4">
         <div className="space-y-1 px-3">
-          {loading && <p className="px-2 py-2 text-xs text-white/30">Loading…</p>}
+          {loading && <p className="px-2 py-2 text-[13px] text-white/30">Loading…</p>}
 
           {!loading && companies.length === 0 && (
-            <p className="px-2 py-2 text-xs text-white/30">
+            <p className="px-2 py-2 text-[13px] leading-relaxed text-white/30">
               Nothing analyzed yet — send a brief in the chat to start your first session.
             </p>
           )}
@@ -119,7 +139,7 @@ export function HistorySidebar({
               key={company.id}
               type="button"
               onClick={() => onSelectCompany?.(company.id)}
-              className={`flex w-full items-center justify-between rounded-lg px-2 py-2 text-left text-xs transition-colors ${
+              className={`flex w-full items-center justify-between rounded-lg px-2 py-2.5 text-left text-[13.5px] transition-colors ${
                 activeCompanyId === company.id
                   ? "bg-white/[0.06] text-white/85"
                   : "text-white/45 hover:bg-white/[0.04] hover:text-white/80"
@@ -131,7 +151,7 @@ export function HistorySidebar({
                 </span>
                 {company.name}
               </span>
-              <span className="text-[10px] text-white/25">{company.score}</span>
+              <span className="text-[11px] text-white/25">{company.score}</span>
             </button>
           ))}
         </div>

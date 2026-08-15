@@ -39,7 +39,7 @@ export function Topbar({
         </button>
         <div>
           <p className="text-[11px] uppercase tracking-widest text-white/30">ProspectIQ</p>
-          <h1 className="text-sm font-medium text-white/90">{current?.label ?? "Overview"}</h1>
+          <h1 className="text-[17px] font-semibold text-white/90">{current?.label ?? "Overview"}</h1>
         </div>
       </div>
 

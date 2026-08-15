@@ -15,13 +15,15 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
   return (
     <TooltipProvider delayDuration={200}>
-      <div className="relative flex min-h-screen">
+      <div className="relative flex h-dvh overflow-hidden">
         <AuroraBackground />
         <Sidebar onOpenPalette={() => setOpen(true)} />
         <MobileNav open={mobileNavOpen} onOpenChange={setMobileNavOpen} />
-        <div className="flex min-h-screen flex-1 flex-col overflow-x-hidden">
+        <div className="flex h-full min-h-0 flex-1 flex-col overflow-x-hidden">
           <Topbar onOpenPalette={() => setOpen(true)} onOpenMobileNav={() => setMobileNavOpen(true)} />
-          <main className="flex-1 px-4 py-5 sm:px-5 sm:py-6 lg:px-8 lg:py-8">{children}</main>
+          <main className="flex min-h-0 flex-1 flex-col overflow-y-auto px-4 py-5 sm:px-5 sm:py-6 lg:px-8 lg:py-8">
+            {children}
+          </main>
         </div>
         <CommandPalette open={open} onOpenChange={setOpen} />
       </div>

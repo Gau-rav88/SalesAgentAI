@@ -46,6 +46,14 @@ export function WorkspaceClient() {
 
   function reportFromAnalysis(analysis: AnalyzeResponse) {
     const assessment = analysis.overall_assessment;
+    const guardrail = analysis.guardrail as
+      | {
+          unsupported_claims?: string[];
+          supported_claims?: string[];
+          confidence?: number;
+          reasoning?: string;
+        }
+      | undefined;
     return {
       company: assessment?.company || analysis.knowledge?.company,
       recommendation: assessment?.overall_recommendation,
@@ -55,6 +63,10 @@ export function WorkspaceClient() {
       approved: assessment?.approved,
       analysisId: analysis.analysis_id,
       companyId: analysis.company_id,
+      unsupportedClaims: guardrail?.unsupported_claims ?? [],
+      supportedClaims: guardrail?.supported_claims ?? [],
+      guardrailConfidence: guardrail?.confidence,
+      guardrailReasoning: guardrail?.reasoning,
     };
   }
 
@@ -232,8 +244,8 @@ export function WorkspaceClient() {
   }
 
   return (
-    <div className="grid h-[calc(100vh-8rem)] grid-cols-1 gap-5 lg:grid-cols-[240px_1fr_300px]">
-      <div className="hidden lg:block">
+    <div className="grid min-h-0 flex-1 grid-cols-1 gap-5 lg:grid-cols-[240px_1fr_300px]">
+      <div className="hidden min-h-0 lg:block">
         <HistorySidebar onSelectCompany={handleSelectCompany} activeCompanyId={activeCompanyId} />
       </div>
 
@@ -241,8 +253,12 @@ export function WorkspaceClient() {
         <ChatPanel messages={messages} onSend={handleSend} sending={sending} />
       </div>
 
-      <div className="hidden overflow-y-auto pr-1 lg:block">
-        <ExecutiveBriefPanel assessment={result?.overall_assessment ?? null} knowledge={result?.knowledge ?? null} />
+      <div className="hidden min-h-0 overflow-y-auto pr-1 lg:block">
+        <ExecutiveBriefPanel
+          assessment={result?.overall_assessment ?? null}
+          knowledge={result?.knowledge ?? null}
+          guardrail={(result?.guardrail as Record<string, unknown> | undefined) ?? null}
+        />
       </div>
     </div>
   );

@@ -27,12 +27,12 @@ export function ChatPanel({ messages, onSend, sending }: ChatPanelProps) {
 
   return (
     <div className="flex h-full flex-col rounded-2xl border border-white/8 bg-[#111111]">
-      <div className="flex items-center gap-2 border-b border-white/6 px-4 py-3.5">
+      <div className="flex shrink-0 items-center gap-2 border-b border-white/6 px-4 py-3.5">
         <Sparkles className="h-4 w-4 text-white/50" />
-        <span className="text-sm font-medium text-white/85">Research Assistant</span>
+        <span className="text-[15px] font-semibold text-white/85">Research Assistant</span>
       </div>
 
-      <ScrollArea className="flex-1 px-4 py-5">
+      <ScrollArea className="min-h-0 flex-1 px-4 py-5">
         <div className="space-y-6">
           <AnimatePresence initial={false}>
             {messages.map((message) => (
@@ -48,7 +48,7 @@ export function ChatPanel({ messages, onSend, sending }: ChatPanelProps) {
 
                 <div
                   className={cn(
-                    "max-w-[82%] rounded-2xl px-3.5 py-2.5 text-[13px] leading-relaxed",
+                    "max-w-[82%] rounded-2xl px-4 py-3 text-[14.5px] leading-relaxed",
                     message.role === "user"
                       ? "bg-white/[0.08] text-white/90"
                       : "border border-white/6 bg-white/[0.03] text-white/70",
@@ -90,7 +90,9 @@ export function ChatPanel({ messages, onSend, sending }: ChatPanelProps) {
         </div>
       </ScrollArea>
 
-      <PromptComposer onSend={onSend} sending={sending} />
+      <div className="shrink-0">
+        <PromptComposer onSend={onSend} sending={sending} />
+      </div>
     </div>
   );
 }

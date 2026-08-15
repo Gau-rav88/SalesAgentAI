@@ -42,15 +42,15 @@ export function Sidebar({ onOpenPalette }: { onOpenPalette: () => void }) {
     .toUpperCase();
 
   return (
-    <aside className="hidden lg:flex h-screen w-[248px] shrink-0 flex-col border-r border-white/6 bg-[#0b0b0b]/80 backdrop-blur-xl">
+    <aside className="hidden lg:flex h-full w-[248px] shrink-0 flex-col border-r border-white/6 bg-[#0b0b0b]/80 backdrop-blur-xl">
       <div className="flex items-center gap-2 px-5 py-6">
         <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-b from-white to-white/70 text-[#090909]">
           <LayoutGrid className="h-4 w-4" />
         </div>
-        <span className="text-sm font-semibold tracking-tight text-white">{APP_NAME}</span>
+        <span className="text-[15px] font-semibold tracking-tight text-white">{APP_NAME}</span>
       </div>
 
-      <nav className="flex-1 space-y-1 px-3">
+      <nav className="flex-1 space-y-1 px-3 overflow-y-auto min-h-0">
         {NAV_ITEMS.map((item) => {
           const Icon = ICONS[item.id] ?? LayoutGrid;
           const isActive = pathname?.startsWith(item.href);
@@ -59,7 +59,7 @@ export function Sidebar({ onOpenPalette }: { onOpenPalette: () => void }) {
               key={item.id}
               href={item.href}
               className={cn(
-                "group relative flex items-center gap-2.5 rounded-xl px-3 py-2.5 text-sm transition-colors",
+                "group relative flex items-center gap-2.5 rounded-xl px-3 py-2.5 text-[14px] transition-colors",
                 isActive ? "text-white" : "text-white/45 hover:text-white/80 hover:bg-white/[0.03]",
               )}
             >

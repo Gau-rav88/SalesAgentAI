@@ -21,7 +21,6 @@ import {
   Swords,
   Target,
   Zap,
-  UploadCloud,
 } from "lucide-react";
 import {
   DropdownMenu,
@@ -54,7 +53,6 @@ export interface ComposerAttachment {
   id: string;
   kind: AttachmentKind;
   label: string;
-  file?: File;
 }
 
 const MODES: { id: WorkspaceMode; icon: React.ReactNode; description: string }[] = [
@@ -76,32 +74,6 @@ const ADD_ITEMS: { kind: AttachmentKind; label: string; icon: React.ReactNode; g
   { kind: "calendar", label: "Connect Calendar", icon: <CalendarDays className="h-4 w-4" />, group: "connect" },
 ];
 
-// ---- helpers for auto-detecting what was dropped/pasted ----
-
-function detectFileKind(file: File): "pdf" | "csv" | null {
-  const name = file.name.toLowerCase();
-  if (file.type === "application/pdf" || name.endsWith(".pdf")) return "pdf";
-  if (
-    file.type === "text/csv" ||
-    file.type === "application/vnd.ms-excel" ||
-    name.endsWith(".csv")
-  ) {
-    return "csv";
-  }
-  return null;
-}
-
-// Matches things like "https://x.com", "www.x.com", "x.com/path" but not plain
-// sentences ("go check google.com please") — no spaces allowed.
-const URL_PATTERN = /^(https?:\/\/)?([\w-]+\.)+[a-z]{2,}(:\d+)?([/?#]\S*)?$/i;
-
-function extractUrl(text: string): string | null {
-  const trimmed = text.trim();
-  if (!trimmed || /\s/.test(trimmed)) return null;
-  if (!URL_PATTERN.test(trimmed)) return null;
-  return trimmed;
-}
-
 interface PromptComposerProps {
   onSend: (text: string, meta: { mode: WorkspaceMode; attachments: ComposerAttachment[] }) => void;
   sending?: boolean;
@@ -113,28 +85,18 @@ export function PromptComposer({ onSend, sending }: PromptComposerProps) {
   const [attachments, setAttachments] = useState<ComposerAttachment[]>([]);
   const [urlDraft, setUrlDraft] = useState("");
   const [urlOpen, setUrlOpen] = useState(false);
-  const [isDragging, setIsDragging] = useState(false);
-  const [dropError, setDropError] = useState<string | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const pendingFileKind = useRef<"pdf" | "csv" | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const dragCounter = useRef(0);
-  const dropErrorTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  function flashDropError(message: string) {
-    setDropError(message);
-    if (dropErrorTimeout.current) clearTimeout(dropErrorTimeout.current);
-    dropErrorTimeout.current = setTimeout(() => setDropError(null), 2500);
-  }
-
-  function addAttachment(kind: AttachmentKind, label: string, file?: File) {
+  function addAttachment(kind: AttachmentKind, label: string) {
     setAttachments((prev) => {
       // Connections are single-toggle; files/URLs can stack.
       if (["crm", "gmail", "drive", "notion", "calendar"].includes(kind) && prev.some((a) => a.kind === kind)) {
         return prev;
       }
-      return [...prev, { id: `${kind}-${Date.now()}`, kind, label, file }];
+      return [...prev, { id: `${kind}-${Date.now()}`, kind, label }];
     });
   }
 
@@ -160,7 +122,7 @@ export function PromptComposer({ onSend, sending }: PromptComposerProps) {
     const file = e.target.files?.[0];
     const kind = pendingFileKind.current;
     if (file && kind) {
-      addAttachment(kind, file.name, file);
+      addAttachment(kind, file.name);
     }
     e.target.value = "";
     pendingFileKind.current = null;
@@ -173,91 +135,6 @@ export function PromptComposer({ onSend, sending }: PromptComposerProps) {
     }
     setUrlDraft("");
     setUrlOpen(false);
-  }
-
-  // ---- unified router: given a File OR a raw text string, decide pdf / csv / url ----
-  function routeIncoming(file: File | null, text: string | null): boolean {
-    if (file) {
-      const kind = detectFileKind(file);
-      if (kind) {
-        addAttachment(kind, file.name, file);
-        return true;
-      }
-      flashDropError("Only PDF or CSV files are supported");
-      return false;
-    }
-    if (text) {
-      const url = extractUrl(text);
-      if (url) {
-        addAttachment("url", url.replace(/^https?:\/\//, ""));
-        return true;
-      }
-    }
-    return false;
-  }
-
-  // ---- drag & drop on the whole composer ----
-  function handleDragEnter(e: React.DragEvent) {
-    e.preventDefault();
-    dragCounter.current += 1;
-    if (e.dataTransfer.types.includes("Files") || e.dataTransfer.types.includes("text/plain")) {
-      setIsDragging(true);
-    }
-  }
-
-  function handleDragOver(e: React.DragEvent) {
-    e.preventDefault();
-    e.dataTransfer.dropEffect = "copy";
-  }
-
-  function handleDragLeave(e: React.DragEvent) {
-    e.preventDefault();
-    dragCounter.current -= 1;
-    if (dragCounter.current <= 0) {
-      dragCounter.current = 0;
-      setIsDragging(false);
-    }
-  }
-
-  function handleDrop(e: React.DragEvent) {
-    e.preventDefault();
-    dragCounter.current = 0;
-    setIsDragging(false);
-
-    // Only ever take the first item — one attachment per drop.
-    const file = e.dataTransfer.files?.[0] ?? null;
-    if (file) {
-      routeIncoming(file, null);
-      return;
-    }
-
-    const text =
-      e.dataTransfer.getData("text/uri-list") || e.dataTransfer.getData("text/plain");
-    if (text) {
-      const handled = routeIncoming(null, text);
-      if (!handled) flashDropError("Drop a PDF, CSV, or a link");
-    }
-  }
-
-  // ---- paste (Ctrl/Cmd+V) into the textarea ----
-  function handlePaste(e: React.ClipboardEvent<HTMLTextAreaElement>) {
-    const file = e.clipboardData.files?.[0] ?? null;
-    if (file) {
-      // A real file was pasted (e.g. copied from Finder/Explorer) — never let it
-      // dump binary/garbage text into the box.
-      e.preventDefault();
-      routeIncoming(file, null);
-      return;
-    }
-
-    const text = e.clipboardData.getData("text/plain");
-    const url = text ? extractUrl(text) : null;
-    if (url) {
-      e.preventDefault();
-      addAttachment("url", url.replace(/^https?:\/\//, ""));
-      return;
-    }
-    // Otherwise it's plain text — let the browser paste it into the textarea as normal.
   }
 
   function handleSend() {
@@ -278,47 +155,9 @@ export function PromptComposer({ onSend, sending }: PromptComposerProps) {
 
   return (
     <div className="border-t border-white/6 p-3">
-      <input ref={fileInputRef} type="file" accept=".pdf,.csv" className="hidden" onChange={handleFileChosen} />
+      <input ref={fileInputRef} type="file" className="hidden" onChange={handleFileChosen} />
 
-      <div
-        onDragEnter={handleDragEnter}
-        onDragOver={handleDragOver}
-        onDragLeave={handleDragLeave}
-        onDrop={handleDrop}
-        className={cn(
-          "relative rounded-2xl border border-white/8 bg-white/[0.02] transition-colors focus-within:border-white/20 focus-within:bg-white/[0.03]",
-          isDragging && "border-white/40 bg-white/[0.06]",
-        )}
-      >
-        {/* Drag overlay */}
-        <AnimatePresence>
-          {isDragging && (
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center gap-2 rounded-2xl border-2 border-dashed border-white/30 bg-black/60 text-[13px] font-medium text-white/80"
-            >
-              <UploadCloud className="h-4 w-4" />
-              Drop PDF, CSV, or a link
-            </motion.div>
-          )}
-        </AnimatePresence>
-
-        {/* Drop/paste error toast */}
-        <AnimatePresence>
-          {dropError && (
-            <motion.div
-              initial={{ opacity: 0, y: -4 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -4 }}
-              className="absolute -top-9 left-1/2 z-20 -translate-x-1/2 whitespace-nowrap rounded-lg border border-red-400/20 bg-red-500/10 px-3 py-1.5 text-[11px] font-medium text-red-300"
-            >
-              {dropError}
-            </motion.div>
-          )}
-        </AnimatePresence>
-
+      <div className="rounded-2xl border border-white/8 bg-white/[0.02] transition-colors focus-within:border-white/20 focus-within:bg-white/[0.03]">
         {/* Attachment chips */}
         <AnimatePresence initial={false}>
           {attachments.length > 0 && (
@@ -389,13 +228,12 @@ export function PromptComposer({ onSend, sending }: PromptComposerProps) {
 
         <textarea
           ref={textareaRef}
-          className="w-full resize-none bg-transparent px-3.5 pb-1 pt-3 text-[14px] leading-relaxed text-white/90 placeholder-white/30 focus:outline-none"
+          className="w-full resize-none bg-transparent px-3.5 pb-1 pt-3 text-[15px] leading-relaxed text-white/90 placeholder-white/30 focus:outline-none"
           rows={2}
           placeholder="Research a company, upload resources, or ask ProspectIQ to generate a sales strategy..."
           value={prompt}
           onChange={(e) => setPrompt(e.target.value)}
           onKeyDown={handleKeyDown}
-          onPaste={handlePaste}
           disabled={sending}
         />
 
