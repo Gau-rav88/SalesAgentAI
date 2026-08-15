@@ -25,6 +25,9 @@ def _serialize(draft, company_name: str):
         "companyId": str(draft.company_id),
         "companyName": company_name,
         "stakeholderName": draft.stakeholder_name,
+        "stakeholderEmail": draft.stakeholder_email,
+        "emailVerified": draft.email_verified,
+        "emailMxDomain": draft.email_mx_domain,
         "channel": draft.channel,
         "subject": draft.subject,
         "body": draft.body,
@@ -67,7 +70,7 @@ async def generate_draft(
     if analysis is None:
         raise HTTPException(status_code=404, detail="Analysis not found")
 
-    draft = service.generate_from_analysis(db, current_user.id, analysis)
+    draft = service.generate_from_analysis(db, current_user, analysis)
 
     return _serialize(draft, draft.company.name if draft.company else "")
 

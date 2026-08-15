@@ -1,7 +1,45 @@
+import re
+
 from sqlalchemy.orm import Session
 
 from app.models.analysis_result import AnalysisResult
 from app.models.outreach_draft import OutreachDraft
+from app.models.company import Company
+from app.models.user import User
+
+from app.core.logger import logger
+
+
+# Matches the bracketed placeholders LLM-generated drafts commonly leave
+# in, e.g. "Dear [Name]," or "Best regards, [Your Name]". Grouped so we
+# can tell a "who's this email addressed to" placeholder apart from a
+# "who's this email signed by" placeholder and fill each correctly.
+_RECIPIENT_PLACEHOLDER = re.compile(
+    r"\[\s*(?:First\s+)?(?:Name|Recipient(?:\s+Name)?|Contact(?:\s+Name)?)\s*\]",
+    re.IGNORECASE,
+)
+_SENDER_PLACEHOLDER = re.compile(
+    r"\[\s*(?:Your|Sender)\s+Name\s*\]",
+    re.IGNORECASE,
+)
+
+
+def _personalize(text: str, recipient_name: str, sender_name: str) -> str:
+    """
+    Replaces generic bracketed placeholders the LLM leaves in drafts
+    with the real stakeholder's first name and the real sending user's
+    name, so a draft never goes out literally addressed to "[Name]".
+    """
+    if not text:
+        return text
+
+    recipient_first = (recipient_name or "").strip().split(" ")[0] or "there"
+    sender = (sender_name or "").strip() or "The Team"
+
+    text = _RECIPIENT_PLACEHOLDER.sub(recipient_first, text)
+    text = _SENDER_PLACEHOLDER.sub(sender, text)
+
+    return text
 
 
 class OutreachService:
@@ -15,7 +53,7 @@ class OutreachService:
     def generate_from_analysis(
         self,
         db: Session,
-        user_id: int,
+        current_user: User,
         analysis: AnalysisResult,
     ) -> OutreachDraft:
 
@@ -41,10 +79,13 @@ class OutreachService:
         if not body:
             body = next_action
 
+        subject = _personalize(str(subject), stakeholder_name, current_user.username)
+        body = _personalize(str(body), stakeholder_name, current_user.username)
+
         evidence = guardrail.get("supported_claims", []) or []
 
         draft = OutreachDraft(
-            user_id=user_id,
+            user_id=current_user.id,
             company_id=analysis.company_id,
             analysis_id=analysis.id,
             stakeholder_name=stakeholder_name,
@@ -61,7 +102,70 @@ class OutreachService:
         db.commit()
         db.refresh(draft)
 
+        self._try_auto_enrich_email(db, draft)
+
         return draft
+
+
+    def _try_auto_enrich_email(
+        self,
+        db: Session,
+        draft: OutreachDraft,
+    ) -> None:
+        """
+        Best-effort: try to find + verify the stakeholder's email right
+        when the draft is created, so it's already sitting in the DB by
+        the time the person opens the queue. Never blocks or fails draft
+        creation — any error here is logged and swallowed.
+        """
+        if not draft.stakeholder_name or draft.stakeholder_name == "Unknown contact":
+            return
+
+        company = (
+            db.query(Company)
+            .filter(Company.id == draft.company_id)
+            .first()
+        )
+
+        if not company or not company.website:
+            return
+
+        try:
+            # Local import to avoid a hard circular dependency between
+            # services; enrichment_service has no dependency back on this
+            # module, so this is just keeping the import surface small.
+            from app.api.enrichment import _extract_domain
+            from app.services.enrichment_service import (
+                EnrichmentService,
+                EnrichmentAPIError,
+            )
+
+            name_parts = draft.stakeholder_name.strip().split(" ", 1)
+            first_name = name_parts[0]
+            last_name = name_parts[1] if len(name_parts) > 1 else ""
+            domain = _extract_domain(company.website)
+
+            result = EnrichmentService().find_and_verify_email(
+                first_name=first_name,
+                last_name=last_name,
+                domain=domain,
+            )
+
+            if result is not None:
+                draft.stakeholder_email = result["email"]
+                draft.email_verified = result["is_valid"]
+                draft.email_mx_domain = result["mx_domain"]
+                db.commit()
+                db.refresh(draft)
+
+        except EnrichmentAPIError as e:
+            logger.warning(
+                f"Auto email enrichment failed for draft {draft.id}: {e.message}"
+            )
+        except Exception as e:
+            logger.warning(
+                f"Auto email enrichment error for draft {draft.id}: {e}"
+            )
 
     def list_for_user(self, db: Session, user_id: int):
         return (

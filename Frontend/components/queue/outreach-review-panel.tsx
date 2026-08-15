@@ -70,7 +70,7 @@ export function OutreachReviewPanel({
   useEffect(() => {
     setSubject(draft.subject);
     setBody(draft.body);
-    setRecipient("");
+    setRecipient(draft.stakeholderEmail ?? "");
   }, [draft]);
 
   const ChannelIcon = CHANNEL_ICON[draft.channel];
@@ -204,9 +204,20 @@ export function OutreachReviewPanel({
                   </div>
 
                   <div>
-                    <p className="text-[10px] uppercase tracking-wider text-white/30">
-                      Recipient
-                    </p>
+                    <div className="flex items-center gap-2">
+                      <p className="text-[10px] uppercase tracking-wider text-white/30">
+                        Recipient
+                      </p>
+
+                      {draft.stakeholderEmail && (
+                        <Badge
+                          variant={draft.emailVerified ? "success" : "warning"}
+                          className="text-[9px]"
+                        >
+                          {draft.emailVerified ? "Verified" : "Unverified"}
+                        </Badge>
+                      )}
+                    </div>
 
                     <input
                       value={recipient}
