@@ -83,7 +83,7 @@ export function OutreachReviewPanel({
 
   async function handleConnectGmail() {
     try {
-      const data: any = await apiFetch("/auth/google/login");
+      const data: any = await apiFetch("/auth/google/connect");
 
       window.location.href = data.authorization_url;
     } catch (err) {

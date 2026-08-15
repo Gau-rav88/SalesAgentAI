@@ -256,3 +256,14 @@ class OutreachService:
         db.refresh(draft)
 
         return draft
+    
+    def delete(self, db: Session, user_id: int, draft_id: int):
+        draft = self.get(db, user_id, draft_id)
+
+        if draft is None:
+            return None
+
+        db.delete(draft)
+        db.commit()
+
+        return draft_id

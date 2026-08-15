@@ -161,6 +161,21 @@ async def edit_draft(
 
     return _serialize(draft, draft.company.name if draft.company else "")
 
+@router.delete("/{draft_id}")
+async def delete_draft(
+    draft_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    deleted_id = service.delete(db, current_user.id, draft_id)
+
+    if deleted_id is None:
+        raise HTTPException(status_code=404, detail="Draft not found")
+
+    return {
+        "success": True,
+        "deleted_id": deleted_id,
+    }
 
 @router.post("/{draft_id}/send")
 async def send_email(
