@@ -51,7 +51,7 @@ origins = [
     "https://sales-agent-ai-jet.vercel.app/",
 
     # Preview deployments
-    "https://sales-agent-csgz0v8qi-gaurav88s-projects.vercel.app/",
+    "https://sales-agent-ai-git-main-gaurav88s-projects.vercel.app/",
 ]
 
 app.add_middleware(
