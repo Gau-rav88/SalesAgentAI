@@ -188,6 +188,9 @@ export interface OutreachDraft {
   companyId: string;
   companyName: string;
   stakeholderName: string;
+  stakeholderEmail: string | null;
+  emailVerified: boolean;
+  emailMxDomain: string | null;
   channel: "email" | "linkedin" | "call-script";
   subject: string;
   body: string;

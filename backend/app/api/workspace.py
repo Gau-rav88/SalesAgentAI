@@ -1,7 +1,7 @@
 from collections import defaultdict
 from datetime import datetime, timedelta
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 from sqlalchemy import or_
@@ -13,12 +13,15 @@ from app.models.company import Company
 from app.models.user import User
 from statistics import mean
 from app.models.knowledge_source import KnowledgeSource
+from app.services.company_service import CompanyService
 import re
 
 router = APIRouter(
     prefix="/workspace",
     tags=["Workspace"],
 )
+
+company_service = CompanyService()
 
 
 INTENT_HIGH_THRESHOLD = 80
@@ -94,7 +97,7 @@ def _applicable_purposes(
     buying_signals: list,
     sources: list,
 ) -> list[str]:
-
+   
     applicable = []
     has_any_evidence = bool(pain_points or buying_signals or sources)
 
@@ -124,7 +127,7 @@ def _purpose_strategy(
     buying_signals: list,
     applicable_purposes: list[str],
 ) -> dict:
-
+   
     purpose = OUTREACH_PURPOSES.get(purpose_key)
 
     if purpose is None:
@@ -144,11 +147,7 @@ def _purpose_strategy(
 
     if level == "HIGH":
         posture = "Direct, personalized"
-        grounding = (
-            f"to {decision_maker}"
-            if decision_maker
-            else "to the identified stakeholder"
-        )
+        grounding = f"to {decision_maker}" if decision_maker else "to the identified stakeholder"
     elif level == "MEDIUM":
         posture = "Evidence-first, discovery-oriented"
         grounding = "opening a conversation before pitching"
@@ -166,7 +165,6 @@ def _purpose_strategy(
         "name": name,
         "description": description,
     }
-
 
 STRATEGY_OPTIONS_BY_LEVEL = {
     "HIGH": [
@@ -243,9 +241,7 @@ def _select_strategy_key(
     account, based only on real, already-extracted fields — never
     invents a new field to decide on.
     """
-    decision_maker = knowledge.get("decision_makers") or persona.get(
-        "primary_decision_maker"
-    )
+    decision_maker = knowledge.get("decision_makers") or persona.get("primary_decision_maker")
     pain_points = knowledge.get("pain_points") or []
     buying_signals = knowledge.get("buying_signals") or []
     sources = knowledge.get("sources") or []
@@ -272,7 +268,10 @@ def _select_strategy_key(
 
 def _strategy_options_for(level: str, selected_key: str) -> list[dict]:
     options = STRATEGY_OPTIONS_BY_LEVEL.get(level, [])
-    return [{**opt, "recommended": opt["key"] == selected_key} for opt in options]
+    return [
+        {**opt, "recommended": opt["key"] == selected_key}
+        for opt in options
+    ]
 
 
 @router.get("/")
@@ -284,7 +283,9 @@ async def workspace(
     companies = (
         db.query(Company)
         .join(AnalysisResult)
-        .filter(AnalysisResult.user_id == current_user.id)
+        .filter(
+            AnalysisResult.user_id == current_user.id
+        )
         .group_by(Company.id)
         .all()
     )
@@ -296,7 +297,7 @@ async def workspace(
     all_analyses = (
         db.query(AnalysisResult)
         .filter(AnalysisResult.user_id == current_user.id)
-        .order_by(AnalysisResult.created_at.desc())
+        .order_by(AnalysisResult.created_at.asc())
         .all()
     )
 
@@ -335,14 +336,8 @@ async def workspace(
                 ),
             }
         )
-        response.sort(
-            key=lambda x: x["last_analysis"],
-            reverse=True,
-        )
 
     return response
-
-
 @router.get("/stats")
 async def workspace_stats(
     current_user: User = Depends(get_current_user),
@@ -376,6 +371,7 @@ async def workspace_stats(
     week_ago = now - timedelta(days=7)
     two_weeks_ago = now - timedelta(days=14)
 
+   
     latest_by_company: dict[int, AnalysisResult] = {}
     first_created_by_company: dict[int, datetime] = {}
 
@@ -420,6 +416,7 @@ async def workspace_stats(
         if not a.guardrail.get("approved", True) and a.created_at >= week_ago
     )
 
+  
     status_counts = {"analyzed": 0, "in-review": 0, "queued": 0}
     industry_pain_counts: dict[str, int] = defaultdict(int)
     trust_buckets = {"0-20": 0, "21-40": 0, "41-60": 0, "61-80": 0, "81-100": 0}
@@ -438,8 +435,7 @@ async def workspace_stats(
             .all()
         )
         knowledge_by_id = {
-            ks.id: (ks.processed_data.get("knowledge", {}) or {})
-            for ks in knowledge_sources
+            ks.id: (ks.processed_data.get("knowledge", {}) or {}) for ks in knowledge_sources
         }
 
     for company in companies:
@@ -449,9 +445,7 @@ async def workspace_stats(
             status_counts["queued"] += 1
             continue
 
-        status_counts[
-            "analyzed" if latest.guardrail.get("approved", True) else "in-review"
-        ] += 1
+        status_counts["analyzed" if latest.guardrail.get("approved", True) else "in-review"] += 1
 
         score = latest.intent.get("intent_score", 0) or 0
         if score <= 20:
@@ -481,9 +475,7 @@ async def workspace_stats(
     for analysis in all_analyses:
         activity_by_day[analysis.created_at.date().isoformat()] += 1
 
-    last_14_days = [
-        (now - timedelta(days=i)).date().isoformat() for i in range(13, -1, -1)
-    ]
+    last_14_days = [(now - timedelta(days=i)).date().isoformat() for i in range(13, -1, -1)]
     research_activity = [
         {"date": day, "analyses": activity_by_day.get(day, 0)} for day in last_14_days
     ]
@@ -501,19 +493,16 @@ async def workspace_stats(
         "guardrail_catches_this_week": guardrail_catches_this_week,
         "stakeholders_mapped": stakeholders_mapped,
         "research_status": [
-            {"status": status, "count": count}
-            for status, count in status_counts.items()
+            {"status": status, "count": count} for status, count in status_counts.items()
         ],
         "pain_points_by_industry": [
             {"industry": industry, "count": count} for industry, count in top_industries
         ],
         "research_activity": research_activity,
         "trust_distribution": [
-            {"bucket": bucket, "count": count}
-            for bucket, count in trust_buckets.items()
+            {"bucket": bucket, "count": count} for bucket, count in trust_buckets.items()
         ],
     }
-
 
 @router.get("/company/{company_id}")
 async def company_details(
@@ -522,10 +511,18 @@ async def company_details(
     db: Session = Depends(get_db),
 ):
 
-    company = db.query(Company).filter(Company.id == company_id).first()
+    company = (
+        db.query(Company)
+        .filter(
+            Company.id == company_id
+        )
+        .first()
+    )
 
     if company is None:
-        return {"error": "Company not found"}
+        return {
+            "error": "Company not found"
+        }
 
     analyses = (
         db.query(AnalysisResult)
@@ -533,7 +530,9 @@ async def company_details(
             AnalysisResult.company_id == company_id,
             AnalysisResult.user_id == current_user.id,
         )
-        .order_by(AnalysisResult.created_at.desc())
+        .order_by(
+            AnalysisResult.created_at.desc()
+        )
         .all()
     )
 
@@ -575,6 +574,38 @@ async def company_details(
     }
 
 
+@router.delete("/company/{company_id}")
+async def delete_company_research(
+    company_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Deletes all of this user's research on a company: every analysis,
+    every outreach draft tied to it, and the underlying knowledge
+    extracted for those analyses. If no other user has research on the
+    same Company row, the company record itself is removed too.
+    """
+
+    deleted = company_service.delete_research(
+        db,
+        current_user.id,
+        company_id,
+    )
+
+    if not deleted:
+        raise HTTPException(
+            status_code=404,
+            detail="No research found for this company",
+        )
+
+    return {
+        "success": True,
+        "message": "Company research deleted",
+        "company_id": company_id,
+    }
+
+
 @router.get("/search")
 async def search_workspace(
     q: str,
@@ -583,7 +614,11 @@ async def search_workspace(
 ):
 
     analyses = (
-        db.query(AnalysisResult).filter(AnalysisResult.user_id == current_user.id).all()
+        db.query(AnalysisResult)
+        .filter(
+            AnalysisResult.user_id == current_user.id
+        )
+        .all()
     )
 
     q = q.lower()
@@ -639,7 +674,6 @@ async def search_workspace(
 
     return results
 
-
 @router.get("/filter")
 async def filter_workspace(
     priority: str | None = None,
@@ -650,7 +684,11 @@ async def filter_workspace(
 ):
 
     analyses = (
-        db.query(AnalysisResult).filter(AnalysisResult.user_id == current_user.id).all()
+        db.query(AnalysisResult)
+        .filter(
+            AnalysisResult.user_id == current_user.id
+        )
+        .all()
     )
 
     response = []
@@ -659,17 +697,35 @@ async def filter_workspace(
 
         if priority:
 
-            if analysis.intent.get("priority", "").lower() != priority.lower():
+            if (
+                analysis.intent.get(
+                    "priority",
+                    ""
+                ).lower()
+                != priority.lower()
+            ):
                 continue
 
         if stage:
 
-            if analysis.intent.get("buying_stage", "").lower() != stage.lower():
+            if (
+                analysis.intent.get(
+                    "buying_stage",
+                    ""
+                ).lower()
+                != stage.lower()
+            ):
                 continue
 
         if intent_min:
 
-            if analysis.intent.get("intent_score", 0) < intent_min:
+            if (
+                analysis.intent.get(
+                    "intent_score",
+                    0
+                )
+                < intent_min
+            ):
                 continue
 
         response.append(
@@ -701,10 +757,18 @@ async def company_dashboard(
     db: Session = Depends(get_db),
 ):
 
-    company = db.query(Company).filter(Company.id == company_id).first()
+    company = (
+        db.query(Company)
+        .filter(
+            Company.id == company_id
+        )
+        .first()
+    )
 
     if company is None:
-        return {"error": "Company not found"}
+        return {
+            "error": "Company not found"
+        }
 
     analyses = (
         db.query(AnalysisResult)
@@ -712,16 +776,23 @@ async def company_dashboard(
             AnalysisResult.company_id == company_id,
             AnalysisResult.user_id == current_user.id,
         )
-        .order_by(AnalysisResult.created_at.desc())
+        .order_by(
+            AnalysisResult.created_at.desc()
+        )
         .all()
     )
 
     if not analyses:
-        return {"error": "No analyses found"}
+        return {
+            "error": "No analyses found"
+        }
 
     latest = analyses[0]
 
-    intent_scores = [a.intent.get("intent_score", 0) for a in analyses]
+    intent_scores = [
+        a.intent.get("intent_score", 0)
+        for a in analyses
+    ]
 
     average_intent = round(
         mean(intent_scores),
@@ -737,58 +808,78 @@ async def company_dashboard(
     latest_guardrail = latest.guardrail
 
     dashboard = {
+
         "company": {
+
             "id": company.id,
+
             "name": company.name,
+
             "website": company.website,
+
             "industry": company.industry,
         },
+
         "summary": latest_strategy.get(
             "account_summary",
             "",
         ),
+
         "health_score": average_intent,
+
         "latest_intent_score": latest_intent.get(
             "intent_score",
             0,
         ),
+
         "priority": latest_intent.get(
             "priority",
             "",
         ),
+
         "buying_stage": latest_intent.get(
             "buying_stage",
             "",
         ),
+
         "risk_level": latest_guardrail.get(
             "risk_level",
             "",
         ),
+
         "decision_maker": latest_persona.get(
             "primary_decision_maker",
             "",
         ),
+
         "recommended_action": latest_strategy.get(
             "next_best_action",
             "",
         ),
+
         "communication_style": latest_persona.get(
             "communication_style",
             "",
         ),
+
         "confidence": latest_guardrail.get(
             "confidence",
             0,
         ),
-        "analyses_count": len(analyses),
+
+        "analyses_count": len(
+            analyses
+        ),
+
         "latest_analysis": {
+
             "analysis_id": latest.id,
+
             "created_at": latest.created_at,
-        },
+        }
     }
 
     return dashboard
-
 
 @router.get("/recommendations")
 async def recommendations(
@@ -798,7 +889,9 @@ async def recommendations(
     db: Session = Depends(get_db),
 ):
 
-    query = db.query(AnalysisResult).filter(AnalysisResult.user_id == current_user.id)
+    query = db.query(AnalysisResult).filter(
+        AnalysisResult.user_id == current_user.id
+    )
 
     if company_id is not None:
         query = query.filter(AnalysisResult.company_id == company_id)
@@ -818,8 +911,7 @@ async def recommendations(
             .all()
         )
         knowledge_by_id = {
-            ks.id: (ks.processed_data.get("knowledge", {}) or {})
-            for ks in knowledge_sources
+            ks.id: (ks.processed_data.get("knowledge", {}) or {}) for ks in knowledge_sources
         }
 
     recommendations = []
@@ -857,11 +949,17 @@ async def recommendations(
             score += 5
             reasons.append("Decision maker identified")
 
-        if guardrail.get("risk_level", "").lower() == "low":
+        if guardrail.get(
+            "risk_level",
+            ""
+        ).lower() == "low":
             score += 5
             reasons.append("Low execution risk")
 
-        if strategy.get("next_best_action", ""):
+        if strategy.get(
+            "next_best_action",
+            ""
+        ):
             score += 5
             reasons.append("Clear next action available")
 
@@ -915,19 +1013,13 @@ async def recommendations(
         why_parts = [f"{company.name} scored {intent_score}/100 intent ({level})."]
 
         if decision_maker:
-            why_parts.append(
-                f"A named decision-maker ({decision_maker}) was identified."
-            )
+            why_parts.append(f"A named decision-maker ({decision_maker}) was identified.")
         if pain_points:
-            why_parts.append(
-                f"{len(pain_points)} pain point(s) were extracted from real evidence."
-            )
+            why_parts.append(f"{len(pain_points)} pain point(s) were extracted from real evidence.")
         if buying_signals:
             why_parts.append(f"{len(buying_signals)} buying signal(s) were detected.")
         if sources:
-            why_parts.append(
-                f"Grounded in {len(sources)} real source(s) from research."
-            )
+            why_parts.append(f"Grounded in {len(sources)} real source(s) from research.")
         if not evidence_sufficient:
             why_parts.append(
                 "Limited supporting evidence is available for this account — "
@@ -989,7 +1081,9 @@ async def recommendations(
         reverse=True,
     )
 
-    return {"recommended_companies": recommendations}
+    return {
+        "recommended_companies": recommendations
+    }
 
 
 @router.get("/company/{company_id}/trend")
@@ -1005,12 +1099,16 @@ async def company_trend(
             AnalysisResult.company_id == company_id,
             AnalysisResult.user_id == current_user.id,
         )
-        .order_by(AnalysisResult.created_at.asc())
+        .order_by(
+            AnalysisResult.created_at.asc()
+        )
         .all()
     )
 
     if not analyses:
-        return {"error": "No analyses found"}
+        return {
+            "error": "No analyses found"
+        }
 
     history = []
 
@@ -1045,7 +1143,10 @@ async def company_trend(
             )
         )
 
-    scores = [x["intent_score"] for x in history]
+    scores = [
+        x["intent_score"]
+        for x in history
+    ]
 
     current = scores[-1]
 
@@ -1075,17 +1176,26 @@ async def company_trend(
         recommendation = "Monitor account"
 
     return {
-        "company_id": company_id,
-        "trend": trend,
-        "current_intent": current,
-        "previous_intent": previous,
-        "change": change,
-        "recommendation": recommendation,
-        "history": history,
-        "priority_history": priorities,
-        "buying_stage_history": stages,
-    }
 
+        "company_id": company_id,
+
+        "trend": trend,
+
+        "current_intent": current,
+
+        "previous_intent": previous,
+
+        "change": change,
+
+        "recommendation": recommendation,
+
+        "history": history,
+
+        "priority_history": priorities,
+
+        "buying_stage_history": stages,
+
+    }
 
 @router.get("/company/{company_id}/activity")
 async def company_activity(
@@ -1100,12 +1210,16 @@ async def company_activity(
             AnalysisResult.company_id == company_id,
             AnalysisResult.user_id == current_user.id,
         )
-        .order_by(AnalysisResult.created_at.asc())
+        .order_by(
+            AnalysisResult.created_at.asc()
+        )
         .all()
     )
 
     if not analyses:
-        return {"error": "No activity found"}
+        return {
+            "error": "No activity found"
+        }
 
     timeline = []
 
@@ -1115,69 +1229,78 @@ async def company_activity(
 
         knowledge = (
             db.query(KnowledgeSource)
-            .filter(KnowledgeSource.id == analysis.knowledge_id)
+            .filter(
+                KnowledgeSource.id == analysis.knowledge_id
+            )
             .first()
         )
 
         if knowledge:
 
-            company = knowledge.processed_data.get("knowledge", {}).get("company", "")
-
-            timeline.append(
-                {
-                    "time": created,
-                    "type": "Knowledge",
-                    "icon": "📄",
-                    "title": "Knowledge Extracted",
-                    "description": f"Company identified as {company}",
-                }
+            company = knowledge.processed_data.get(
+                "knowledge",
+                {}
+            ).get(
+                "company",
+                ""
             )
 
-        decision = analysis.persona.get("primary_decision_maker", "")
+            timeline.append({
+                "time": created,
+                "type": "Knowledge",
+                "icon": "📄",
+                "title": "Knowledge Extracted",
+                "description": f"Company identified as {company}"
+            })
+
+        decision = analysis.persona.get(
+            "primary_decision_maker",
+            ""
+        )
 
         if decision:
 
-            timeline.append(
-                {
-                    "time": created,
-                    "type": "Persona",
-                    "icon": "👤",
-                    "title": "Decision Maker Identified",
-                    "description": decision,
-                }
+            timeline.append({
+                "time": created,
+                "type": "Persona",
+                "icon": "👤",
+                "title": "Decision Maker Identified",
+                "description": decision
+            })
+
+        timeline.append({
+            "time": created,
+            "type": "Intent",
+            "icon": "📈",
+            "title": "Buying Intent",
+            "description": f'Intent Score: {analysis.intent.get("intent_score",0)}'
+        })
+
+        timeline.append({
+            "time": created,
+            "type": "Strategy",
+            "icon": "🎯",
+            "title": "Next Best Action",
+            "description": analysis.strategy.get(
+                "next_best_action",
+                ""
             )
+        })
 
-        timeline.append(
-            {
-                "time": created,
-                "type": "Intent",
-                "icon": "📈",
-                "title": "Buying Intent",
-                "description": f'Intent Score: {analysis.intent.get("intent_score",0)}',
-            }
-        )
+        timeline.append({
+            "time": created,
+            "type": "Guardrail",
+            "icon": "🛡️",
+            "title": "Risk Assessment",
+            "description": analysis.guardrail.get(
+                "risk_level",
+                ""
+            )
+        })
 
-        timeline.append(
-            {
-                "time": created,
-                "type": "Strategy",
-                "icon": "🎯",
-                "title": "Next Best Action",
-                "description": analysis.strategy.get("next_best_action", ""),
-            }
-        )
-
-        timeline.append(
-            {
-                "time": created,
-                "type": "Guardrail",
-                "icon": "🛡️",
-                "title": "Risk Assessment",
-                "description": analysis.guardrail.get("risk_level", ""),
-            }
-        )
-
-    timeline.sort(key=lambda x: x["time"])
+    timeline.sort(
+        key=lambda x: x["time"]
+    )
 
     return {
         "company_id": company_id,
@@ -1187,13 +1310,14 @@ async def company_activity(
     }
 
 
+
+
 def _slugify(value: str) -> str:
     slug = re.sub(r"[^a-z0-9]+", "-", value.lower()).strip("-")
     return slug or "unknown"
 
-
 def _source_labels(sources) -> list[str]:
-
+   
     labels = []
     for s in sources or []:
         if isinstance(s, dict):
@@ -1271,11 +1395,7 @@ def _infer_influence(name, role, primary_decision_maker) -> str:
 
     role_lower = role.lower()
 
-    if (
-        name
-        and primary_decision_maker
-        and name.strip().lower() == primary_decision_maker.strip().lower()
-    ):
+    if name and primary_decision_maker and name.strip().lower() == primary_decision_maker.strip().lower():
         return "Decision Maker"
 
     if any(k in role_lower for k in ["cfo", "finance", "budget", "procurement"]):

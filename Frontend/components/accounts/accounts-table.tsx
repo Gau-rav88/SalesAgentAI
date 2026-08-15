@@ -3,13 +3,13 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { motion } from "framer-motion";
-import { ArrowUpRight, Loader2 } from "lucide-react";
+import { ArrowUpRight, Loader2, Trash2 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { accountsService } from "@/services/accounts.service";
 import { ApiError } from "@/services/api-client";
-import { fetchWithCache, getCached } from "@/lib/data-cache";
+import { fetchWithCache, getCached, setCached } from "@/lib/data-cache";
 import type { Company, ResearchStatus } from "@/types";
 
 const COMPANIES_CACHE_KEY = "workspace:companies";
@@ -33,6 +33,9 @@ export function AccountsTable() {
   );
   const [loading, setLoading] = useState(() => getCached<Company[]>(COMPANIES_CACHE_KEY) === undefined);
   const [error, setError] = useState<string | null>(null);
+  const [confirmingId, setConfirmingId] = useState<string | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -67,6 +70,28 @@ export function AccountsTable() {
     };
   }, []);
 
+  async function handleDelete(companyId: string) {
+    setDeletingId(companyId);
+    setDeleteError(null);
+
+    try {
+      await accountsService.deleteCompany(companyId);
+
+      const updated = companies.filter((c) => c.id !== companyId);
+      setCompanies(updated);
+      setCached(COMPANIES_CACHE_KEY, updated);
+    } catch (err) {
+      setDeleteError(
+        err instanceof ApiError
+          ? err.message
+          : "Could not delete this account's research.",
+      );
+    } finally {
+      setDeletingId(null);
+      setConfirmingId(null);
+    }
+  }
+
   return (
     <Card>
       <CardHeader>
@@ -82,6 +107,12 @@ export function AccountsTable() {
 
         {!loading && error && (
           <p className="px-5 py-8 text-sm text-red-400">{error}</p>
+        )}
+
+        {deleteError && (
+          <p className="border-t border-red-500/20 bg-red-500/5 px-5 py-2 text-xs text-red-400">
+            {deleteError}
+          </p>
         )}
 
         {!loading && !error && companies.length === 0 && (
@@ -101,6 +132,7 @@ export function AccountsTable() {
                   <th className="px-5 py-3 font-medium">Employees</th>
                   <th className="px-5 py-3 font-medium">Trust score</th>
                   <th className="px-5 py-3 font-medium">Status</th>
+                  <th className="px-5 py-3" />
                   <th className="px-5 py-3" />
                 </tr>
               </thead>
@@ -146,6 +178,39 @@ export function AccountsTable() {
                       >
                         View report <ArrowUpRight className="h-3 w-3" />
                       </Link>
+                    </td>
+                    <td className="px-5 py-3.5 text-right">
+                      {confirmingId === company.id ? (
+                        <div className="flex items-center justify-end gap-2">
+                          <span className="text-[11px] text-white/40">Delete all research?</span>
+                          <button
+                            onClick={() => handleDelete(company.id)}
+                            disabled={deletingId === company.id}
+                            className="rounded-md bg-red-500/15 px-2 py-1 text-[11px] font-medium text-red-400 transition-colors hover:bg-red-500/25 disabled:opacity-50"
+                          >
+                            {deletingId === company.id ? (
+                              <Loader2 className="h-3 w-3 animate-spin" />
+                            ) : (
+                              "Confirm"
+                            )}
+                          </button>
+                          <button
+                            onClick={() => setConfirmingId(null)}
+                            disabled={deletingId === company.id}
+                            className="rounded-md px-2 py-1 text-[11px] text-white/40 transition-colors hover:text-white/70 disabled:opacity-50"
+                          >
+                            Cancel
+                          </button>
+                        </div>
+                      ) : (
+                        <button
+                          onClick={() => setConfirmingId(company.id)}
+                          className="inline-flex items-center gap-1 text-xs text-white/25 opacity-0 transition-opacity group-hover:opacity-100 hover:text-red-400"
+                          title="Delete all research on this company"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </button>
+                      )}
                     </td>
                   </motion.tr>
                 ))}

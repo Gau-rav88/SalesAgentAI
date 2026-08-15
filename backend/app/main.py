@@ -32,6 +32,7 @@ from app.database.base import Base
 
 from app.models.user import User
 from app.models.connected_account import ConnectedAccount
+from app.api.enrichment import router as enrichment_router
 
 
 app = FastAPI(
@@ -89,6 +90,7 @@ app.include_router(website_router)
 app.include_router(workspace_router)
 app.include_router(queue_router)
 app.include_router(audit_router)
+app.include_router(enrichment_router)
 
 
 @app.get("/")

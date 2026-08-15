@@ -42,6 +42,22 @@ class OutreachDraft(Base):
         default="",
     )
 
+    stakeholder_email: Mapped[str] = mapped_column(
+        String(255),
+        nullable=True,
+        default=None,
+    )
+
+    email_verified: Mapped[bool] = mapped_column(
+        default=False,
+    )
+
+    email_mx_domain: Mapped[str] = mapped_column(
+        String(255),
+        nullable=True,
+        default=None,
+    )
+
     channel: Mapped[str] = mapped_column(
         String(50),
         default="email",

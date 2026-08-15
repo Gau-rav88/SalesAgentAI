@@ -46,4 +46,8 @@ export const accountsService = {
   async getBuyingSignals(companyId: string): Promise<BuyingSignal[]> {
     return workspaceService.getBuyingSignals(companyId) as Promise<BuyingSignal[]>;
   },
+
+  async deleteCompany(companyId: string): Promise<{ success: boolean; message: string }> {
+    return workspaceService.deleteCompany(companyId);
+  },
 };

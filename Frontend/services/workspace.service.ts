@@ -324,6 +324,14 @@ export const workspaceService = {
   async listCompanies(): Promise<WorkspaceCompanySummary[]> {
     return apiFetch<WorkspaceCompanySummary[]>("/workspace/");
   },
+
+  /** Deletes all of this user's research (analyses, drafts, knowledge) for a company. */
+  async deleteCompany(companyId: number | string): Promise<{ success: boolean; message: string }> {
+    return apiFetch<{ success: boolean; message: string }>(
+      `/workspace/company/${companyId}`,
+      { method: "DELETE" },
+    );
+  },
   
   async getStats(): Promise<WorkspaceStats> {
     return apiFetch<WorkspaceStats>("/workspace/stats");
