@@ -14,6 +14,7 @@ from app.services.enrichment_service import (
     EnrichmentService,
     EnrichmentAPIError,
 )
+from app.api.workspace import _latest_knowledge_for_company, _to_text
 
 
 router = APIRouter(
@@ -130,6 +131,27 @@ def _extract_domain(website: str) -> str:
     return domain
 
 
+def _find_contact_linkedin_url(knowledge: dict, stakeholder_name: str) -> str | None:
+    """
+    Match a draft's stakeholder name against the company's stored
+    contacts (captured during research/knowledge extraction) and
+    return whatever linkedin_url was found for them, if any.
+    """
+    if not knowledge:
+        return None
+
+    target = stakeholder_name.strip().lower()
+
+    for contact in knowledge.get("contacts", []) or []:
+        name = _to_text(contact.get("name", "")).strip().lower()
+        if name and name == target:
+            url = contact.get("linkedin_url")
+            if url:
+                return url
+
+    return None
+
+
 @router.post("/drafts/{draft_id}/find-email")
 def find_email_for_draft(
     draft_id: int,
@@ -149,8 +171,6 @@ def find_email_for_draft(
     if not draft:
         raise HTTPException(status_code=404, detail="Draft not found")
 
-    # Idempotent: don't burn credits re-looking up an email we already have,
-    # unless the caller explicitly asks to redo it (?force=true).
     if draft.stakeholder_email and not force:
         return {
             "draft_id": draft.id,
@@ -213,6 +233,90 @@ def find_email_for_draft(
         "email": draft.stakeholder_email,
         "email_verified": draft.email_verified,
         "mx_domain": draft.email_mx_domain,
+        "cached": False,
+    }
+
+
+@router.post("/drafts/{draft_id}/find-email-by-linkedin")
+def find_email_for_draft_by_linkedin(
+    draft_id: int,
+    force: bool = False,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Same idea as find_email_for_draft, but sourced from the LinkedIn URL
+    already captured for this stakeholder during research (workspace
+    knowledge extraction), instead of a name + domain guess. No URL is
+    accepted from the caller - it's looked up from stored data so this
+    stays a one-click action from the frontend.
+    """
+    draft = (
+        db.query(OutreachDraft)
+        .filter(
+            OutreachDraft.id == draft_id,
+            OutreachDraft.user_id == current_user.id,
+        )
+        .first()
+    )
+
+    if not draft:
+        raise HTTPException(status_code=404, detail="Draft not found")
+
+    if draft.stakeholder_email and not force:
+        return {
+            "draft_id": draft.id,
+            "stakeholder_name": draft.stakeholder_name,
+            "email": draft.stakeholder_email,
+            "email_verified": draft.email_verified,
+            "mx_domain": draft.email_mx_domain,
+            "cached": True,
+        }
+
+    if not draft.stakeholder_name.strip():
+        raise HTTPException(
+            status_code=400,
+            detail="Draft has no stakeholder name to look up",
+        )
+
+    _, knowledge = _latest_knowledge_for_company(
+        db, draft.company_id, current_user.id
+    )
+
+    linkedin_url = _find_contact_linkedin_url(knowledge or {}, draft.stakeholder_name)
+
+    if not linkedin_url:
+        raise HTTPException(
+            status_code=404,
+            detail="No LinkedIn URL on file for this stakeholder",
+        )
+
+    try:
+        result = enrichment.find_and_verify_email_by_linkedin(url=linkedin_url)
+    except EnrichmentAPIError as e:
+        raise HTTPException(status_code=e.status_code, detail=e.message)
+
+    if result is None:
+        raise HTTPException(
+            status_code=404,
+            detail="No email found for this LinkedIn profile",
+        )
+
+    draft.stakeholder_email = result["email"]
+    draft.email_verified = result["is_valid"]
+    draft.email_mx_domain = result["mx_domain"]
+
+    db.commit()
+    db.refresh(draft)
+
+    return {
+        "draft_id": draft.id,
+        "stakeholder_name": draft.stakeholder_name,
+        "email": draft.stakeholder_email,
+        "email_verified": draft.email_verified,
+        "mx_domain": draft.email_mx_domain,
+        "email_source": result["email_source"],
+        "linkedin_url": linkedin_url,
         "cached": False,
     }
 
@@ -287,14 +391,6 @@ def backfill_draft_emails(
     db.commit()
 
     return results
-
-    return {
-        "draft_id": draft.id,
-        "stakeholder_name": draft.stakeholder_name,
-        "email": draft.stakeholder_email,
-        "email_verified": draft.email_verified,
-        "mx_domain": draft.email_mx_domain,
-    }
 
 
 @router.post("/verify-email")

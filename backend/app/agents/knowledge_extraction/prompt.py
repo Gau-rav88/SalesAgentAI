@@ -20,7 +20,8 @@ Schema:
             "name": "",
             "role": "",
             "email": "",
-            "phone": ""
+            "phone": "",
+            "linkedin_url": ""
         }
     ],
 

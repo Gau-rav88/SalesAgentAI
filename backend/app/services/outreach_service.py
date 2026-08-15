@@ -23,6 +23,17 @@ _SENDER_PLACEHOLDER = re.compile(
     re.IGNORECASE,
 )
 
+def _display_name_from_username(username: str) -> str:
+    """
+    Usernames like 'gaurav21' aren't fit to sign an email with. Strips
+    trailing digits and title-cases what's left, so 'gaurav21' becomes
+    'Gaurav'. Falls back to the raw username if nothing sensible remains.
+    """
+    if not username:
+        return ""
+
+    cleaned = re.sub(r"\d+$", "", username).strip()
+    return cleaned.title() if cleaned else username
 
 def _personalize(text: str, recipient_name: str, sender_name: str) -> str:
     """
@@ -79,8 +90,10 @@ class OutreachService:
         if not body:
             body = next_action
 
-        subject = _personalize(str(subject), stakeholder_name, current_user.username)
-        body = _personalize(str(body), stakeholder_name, current_user.username)
+        sender_display_name = _display_name_from_username(current_user.username)
+
+        subject = _personalize(str(subject), stakeholder_name, sender_display_name)
+        body = _personalize(str(body), stakeholder_name, sender_display_name)
 
         evidence = guardrail.get("supported_claims", []) or []
 

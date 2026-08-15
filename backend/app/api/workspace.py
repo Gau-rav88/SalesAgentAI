@@ -1442,6 +1442,8 @@ async def company_stakeholders(
         name = _to_text(contact.get("name", "")) or "Unknown"
         role = _to_text(contact.get("role", ""))
 
+        linkedin_url = contact.get("linkedin_url", "") or ""
+
         stakeholders.append(
             {
                 "id": _slugify(f"{company_id}-{name}"),
@@ -1450,7 +1452,8 @@ async def company_stakeholders(
                 "dept": role.split(" ")[0] if role else "General",
                 "influence": _infer_influence(name, role, primary_decision_maker),
                 "score": confidence,
-                "linkedin": False,
+                "linkedin": bool(linkedin_url),
+                "linkedinUrl": linkedin_url,
                 "email": contact.get("email", "") or "",
                 "companyId": str(company_id),
                 "evidence": _source_labels(knowledge.get("sources", [])),
