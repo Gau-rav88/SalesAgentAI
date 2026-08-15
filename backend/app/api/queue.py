@@ -1,6 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
-from googleapiclient.errors import HttpError
 
 from app.auth.dependencies import get_current_user
 from app.database.session import get_db
@@ -115,7 +114,6 @@ async def edit_draft(
 
     return _serialize(draft, draft.company.name if draft.company else "")
 
-
 @router.post("/{draft_id}/send")
 async def send_email(
     draft_id: int,
@@ -134,23 +132,18 @@ async def send_email(
     )
 
     if account is None:
+
         raise HTTPException(
             status_code=400,
             detail="Gmail not connected",
         )
 
-    try:
-        gmail_service.send_email(
-            account,
-            payload.recipient,
-            payload.subject,
-            payload.body,
-        )
-    except HttpError as e:
-        raise HTTPException(
-            status_code=502,
-            detail=f"Failed to send email via Gmail: {e.reason if hasattr(e, 'reason') else str(e)}",
-        )
+    gmail_service.send_email(
+        account,
+        payload.recipient,
+        payload.subject,
+        payload.body,
+    )
 
     draft = service.set_status(
         db,

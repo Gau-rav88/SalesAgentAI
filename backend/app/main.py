@@ -48,9 +48,10 @@ origins = [
     "http://127.0.0.1:3000",
 
     # Vercel Frontend
-    "https://sales-agent-ai-jet.vercel.app"
+    "https://prospect-iq-oobr.vercel.app",
 
-    
+    # Preview deployments
+    "https://prospect-iq-oobr-git-main-ranjit-bhardwaj-s-projects.vercel.app",
 ]
 
 app.add_middleware(
