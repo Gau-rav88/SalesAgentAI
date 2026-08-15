@@ -134,6 +134,13 @@ export interface WorkspaceReportCompletion {
   companyId?: number | string;
 }
 
+export interface StrategyOption {
+  key: string;
+  name: string;
+  description: string;
+  recommended: boolean;
+}
+
 export interface Recommendation {
   analysisId: string;
   companyId: string;
@@ -143,12 +150,22 @@ export interface Recommendation {
   score: number;
   priority: string;
   intent: number;
+  intentScore: number;
+  intentLevel: "HIGH" | "MEDIUM" | "LOW";
   buyingStage: string;
   riskLevel: string;
   decisionMaker: string;
   confidence: number;
+  knowledgeConfidence: number;
   nextAction: string;
   reasons: string[];
+  whyThisRecommendation: string;
+  strategyOptions: StrategyOption[];
+  recommendedStrategy: StrategyOption | null;
+  painPoints: string[];
+  buyingSignals: string[];
+  evidence: Array<{ title: string; url: string }>;
+  evidenceSufficient: boolean;
   createdAt: string;
 }
 

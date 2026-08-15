@@ -14,6 +14,7 @@ from app.services.knowledge_service import KnowledgeService
 from app.services.company_service import CompanyService
 from app.core.context import context
 from app.core.events import emit_step
+from app.utils.evidence import merge_research_sources
 
 
 class AssistantService:
@@ -135,6 +136,19 @@ class AssistantService:
             label="Saving knowledge to the repository...",
             status="active",
             agent="Knowledge Repository",
+        )
+
+        # Re-attach ResearchAgentV2's real sources (search results,
+        # official website, news) to the structured knowledge object.
+        # KnowledgeExtractionAgent only ever sees the evidence *text*
+        # (titles/content, no URLs — see research_v2.py), so without
+        # this, `knowledge["sources"]" would end up empty even when
+        # research genuinely found real, citable sources. Nothing is
+        # fabricated here: only URLs ResearchAgentV2 actually retrieved
+        # are attached.
+        normalized["knowledge"] = merge_research_sources(
+            research,
+            normalized["knowledge"],
         )
 
         record = self.knowledge_service.save(

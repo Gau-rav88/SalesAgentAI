@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { motion } from "framer-motion";
-import { ChevronDown, Loader2, ArrowRight, Check, ExternalLink } from "lucide-react";
+import { ChevronDown, Loader2, ArrowRight, Check, ExternalLink, AlertTriangle } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -10,13 +10,19 @@ import { ScoreRing } from "@/components/common/score-ring";
 import { workspaceService } from "@/services/workspace.service";
 import { queueService } from "@/services/queue.service";
 import { ApiError } from "@/services/api-client";
-import type { Recommendation, Stakeholder } from "@/types";
+import type { Recommendation, Stakeholder, StrategyOption } from "@/types";
 import { cn } from "@/lib/utils";
 
 const PRIORITY_VARIANT: Record<string, "success" | "warning" | "danger" | "outline"> = {
   High: "danger",
   Medium: "warning",
   Low: "outline",
+};
+
+const INTENT_LEVEL_VARIANT: Record<string, "success" | "warning" | "outline"> = {
+  HIGH: "success",
+  MEDIUM: "warning",
+  LOW: "outline",
 };
 
 export function RecommendationCard({
@@ -30,6 +36,13 @@ export function RecommendationCard({
   const [stakeholders, setStakeholders] = useState<Stakeholder[] | null>(null);
   const [loadingDetails, setLoadingDetails] = useState(false);
   const [detailsError, setDetailsError] = useState<string | null>(null);
+
+  // The strategy the user has selected from this account's intent-tier
+  // options — defaults to the AI's recommended one, but nothing is
+  // executed until the user confirms it via "Approve & Generate Draft".
+  const [selectedStrategyKey, setSelectedStrategyKey] = useState<string | undefined>(
+    recommendation.recommendedStrategy?.key,
+  );
 
   const [executing, setExecuting] = useState(false);
   const [executed, setExecuted] = useState(false);
@@ -61,6 +74,10 @@ export function RecommendationCard({
     setExecuting(true);
     setExecuteError(null);
     try {
+      // Draft generation still goes through the existing, unchanged
+      // approval pipeline (/queue/generate -> pending draft -> human
+      // review -> send). Selecting a strategy above only decides which
+      // approach the human is approving — it never sends anything.
       await queueService.generate(recommendation.analysisId);
       setExecuted(true);
       onExecuted?.(recommendation.companyId);
@@ -75,11 +92,10 @@ export function RecommendationCard({
     }
   }
 
-  // Every stakeholder shares the same underlying knowledge.sources array
-  // (see backend/app/api/workspace.py:company_stakeholders), so the
-  // first entry's evidence list is the real, deduped supporting-evidence
-  // set for this company — not a separate fabricated field.
-  const evidence = stakeholders?.[0]?.evidence ?? [];
+  const selectedOption: StrategyOption | undefined =
+    recommendation.strategyOptions.find((o) => o.key === selectedStrategyKey) ??
+    recommendation.recommendedStrategy ??
+    undefined;
 
   return (
     <motion.div layout initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}>
@@ -88,6 +104,9 @@ export function RecommendationCard({
           <div className="flex-1 space-y-2">
             <div className="flex flex-wrap items-center gap-2">
               <h3 className="text-sm font-medium text-white/90">{recommendation.company}</h3>
+              <Badge variant={INTENT_LEVEL_VARIANT[recommendation.intentLevel] ?? "outline"}>
+                {recommendation.intentLevel} INTENT — {recommendation.intentScore}/100
+              </Badge>
               {recommendation.priority && (
                 <Badge variant={PRIORITY_VARIANT[recommendation.priority] ?? "outline"}>
                   {recommendation.priority} Priority
@@ -97,8 +116,17 @@ export function RecommendationCard({
             </div>
 
             <p className="text-[13px] leading-relaxed text-white/60">
-              {recommendation.nextAction || "No recommended action available for this account yet."}
+              {recommendation.whyThisRecommendation ||
+                recommendation.nextAction ||
+                "No recommended action available for this account yet."}
             </p>
+
+            {!recommendation.evidenceSufficient && (
+              <div className="flex items-start gap-1.5 text-[12px] text-amber-400/90">
+                <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                <span>Limited evidence found for this account — treat this recommendation cautiously.</span>
+              </div>
+            )}
 
             {recommendation.reasons.length > 0 && (
               <div className="flex flex-wrap gap-1.5 pt-1">
@@ -127,7 +155,7 @@ export function RecommendationCard({
             ) : (
               <Button size="sm" onClick={handleExecute} disabled={executing}>
                 {executing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
-                Execute Recommendation
+                Approve &amp; Generate Draft
                 {!executing && <ArrowRight className="h-3.5 w-3.5" />}
               </Button>
             )}
@@ -152,10 +180,51 @@ export function RecommendationCard({
             animate={{ opacity: 1, height: "auto" }}
             className="border-t border-white/6 bg-white/[0.015] px-5 py-4"
           >
+            {/* Recommended outreach strategy — a choice, not an automatic action */}
+            {recommendation.strategyOptions.length > 0 && (
+              <div className="mb-5">
+                <p className="mb-2 text-[10px] uppercase tracking-wider text-white/30">
+                  Recommended Strategy — select before approving
+                </p>
+                <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+                  {recommendation.strategyOptions.map((option) => {
+                    const isSelected = option.key === selectedOption?.key;
+                    return (
+                      <button
+                        key={option.key}
+                        type="button"
+                        onClick={() => setSelectedStrategyKey(option.key)}
+                        className={cn(
+                          "rounded-lg border p-3 text-left transition-colors",
+                          isSelected
+                            ? "border-white/30 bg-white/[0.06]"
+                            : "border-white/8 bg-white/[0.015] hover:border-white/15",
+                        )}
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <p className="text-[12px] font-medium text-white/85">{option.name}</p>
+                          {option.recommended && (
+                            <Badge variant="outline" className="shrink-0 text-[10px]">
+                              AI pick
+                            </Badge>
+                          )}
+                        </div>
+                        <p className="mt-1 text-[11px] leading-relaxed text-white/45">{option.description}</p>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
             <div className="grid grid-cols-1 gap-6 sm:grid-cols-3">
               <div>
                 <p className="mb-2 text-[10px] uppercase tracking-wider text-white/30">Why AI Suggested This</p>
                 <ul className="space-y-1.5 text-[12px] leading-relaxed text-white/55">
+                  <li className="flex items-start gap-1.5">
+                    <span className="mt-1.5 h-1 w-1 shrink-0 rounded-full bg-white/30" />
+                    {recommendation.whyThisRecommendation}
+                  </li>
                   {recommendation.reasons.map((r) => (
                     <li key={r} className="flex items-start gap-1.5">
                       <span className="mt-1.5 h-1 w-1 shrink-0 rounded-full bg-white/30" />
@@ -165,7 +234,7 @@ export function RecommendationCard({
                   {recommendation.decisionMaker && (
                     <li className="flex items-start gap-1.5">
                       <span className="mt-1.5 h-1 w-1 shrink-0 rounded-full bg-white/30" />
-                      Decision maker: {recommendation.decisionMaker}
+                      Stakeholder: {recommendation.decisionMaker}
                     </li>
                   )}
                 </ul>
@@ -173,24 +242,30 @@ export function RecommendationCard({
 
               <div>
                 <p className="mb-2 text-[10px] uppercase tracking-wider text-white/30">Supporting Evidence</p>
-                {loadingDetails && (
-                  <div className="flex items-center gap-2 text-[12px] text-white/35">
-                    <Loader2 className="h-3.5 w-3.5 animate-spin" /> Loading…
-                  </div>
+                {!recommendation.evidenceSufficient && recommendation.evidence.length === 0 && (
+                  <p className="text-[12px] text-white/30">
+                    No source-level evidence extracted yet — evidence is insufficient for a strong claim.
+                  </p>
                 )}
-                {detailsError && <p className="text-[12px] text-red-400">{detailsError}</p>}
-                {!loadingDetails && !detailsError && evidence.length === 0 && (
-                  <p className="text-[12px] text-white/30">No source-level evidence extracted yet.</p>
-                )}
-                {!loadingDetails && evidence.length > 0 && (
+                {recommendation.evidence.length > 0 && (
                   <ul className="space-y-1.5 text-[12px] leading-relaxed text-white/55">
-                    {evidence.map((e, i) => (
+                    {recommendation.evidence.slice(0, 5).map((e, i) => (
                       <li key={i} className="flex items-start gap-1.5">
                         <ExternalLink className="mt-0.5 h-3 w-3 shrink-0 text-white/25" />
-                        <span>{e}</span>
+                        <span>{e.title || e.url}</span>
                       </li>
                     ))}
                   </ul>
+                )}
+                {recommendation.painPoints.length > 0 && (
+                  <>
+                    <p className="mb-1.5 mt-3 text-[10px] uppercase tracking-wider text-white/30">Pain Points</p>
+                    <ul className="space-y-1 text-[12px] leading-relaxed text-white/55">
+                      {recommendation.painPoints.slice(0, 3).map((p, i) => (
+                        <li key={i}>· {p}</li>
+                      ))}
+                    </ul>
+                  </>
                 )}
               </div>
 
@@ -201,7 +276,8 @@ export function RecommendationCard({
                     <Loader2 className="h-3.5 w-3.5 animate-spin" /> Loading…
                   </div>
                 )}
-                {!loadingDetails && stakeholders?.length === 0 && (
+                {detailsError && <p className="text-[12px] text-red-400">{detailsError}</p>}
+                {!loadingDetails && !detailsError && stakeholders?.length === 0 && (
                   <p className="text-[12px] text-white/30">No stakeholders extracted yet.</p>
                 )}
                 {!loadingDetails && stakeholders && stakeholders.length > 0 && (
@@ -226,7 +302,7 @@ export function RecommendationCard({
               <div className="flex items-center gap-3 text-[11px] text-white/30">
                 <span>Risk: {recommendation.riskLevel || "—"}</span>
                 <span>·</span>
-                <span>Intent score: {recommendation.intent}</span>
+                <span>Intent score: {recommendation.intentScore}</span>
                 <span>·</span>
                 <span>Overall score: {recommendation.score}/100</span>
               </div>
@@ -238,3 +314,4 @@ export function RecommendationCard({
     </motion.div>
   );
 }
+
