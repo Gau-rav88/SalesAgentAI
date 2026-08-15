@@ -1,6 +1,12 @@
 from fastapi import APIRouter
 
 from app.router.service import RouterService
+from app.schemas.user import (
+    UserCreate,
+    UserLogin,
+    UserResponse,
+    GoogleLogin,
+)
 
 router = APIRouter(
     prefix="/router",

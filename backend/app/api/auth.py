@@ -18,6 +18,12 @@ from app.models.connected_account import ConnectedAccount
 from app.models.user import User
 from app.schemas.user import UserCreate, UserLogin, UserResponse
 from app.services.auth_service import AuthService
+from app.schemas.user import (
+    UserCreate,
+    UserLogin,
+    UserResponse,
+    GoogleLogin,
+)
 
 router = APIRouter(
     prefix="/auth",
@@ -414,3 +420,13 @@ def google_status(
         "connected": True,
         "email": account.email,
     }
+
+@router.post("/google-auth")
+def google_auth(
+    user: GoogleLogin,
+    db: Session = Depends(get_db),
+):
+    return service.google_login(
+        db,
+        user,
+    )

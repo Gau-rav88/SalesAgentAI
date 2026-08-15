@@ -49,4 +49,18 @@ export const authService = {
   logout() {
     clearToken();
   },
+
+  async googleLogin(token: string) {
+    const result = await apiFetch<AuthResponse>("/auth/google-auth", {
+      method: "POST",
+      body: JSON.stringify({
+        token,
+      }),
+      auth: false,
+    });
+
+    setToken(result.access_token);
+
+    return result;
+  },
 };
