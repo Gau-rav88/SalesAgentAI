@@ -8,6 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { GuardrailVerdict } from "@/components/workspace/guardrail-verdict";
 import { accountsService } from "@/services/accounts.service";
+import { fetchWithCache, getCached } from "@/lib/data-cache";
 import type { Company } from "@/types";
 import type { OverallAssessment, KnowledgeData } from "@/services/workspace.service";
 
@@ -88,6 +89,8 @@ export function ExecutiveBriefPanel({ assessment, knowledge, guardrail }: Execut
   );
 }
 
+const SESSIONS_CACHE_KEY = "workspace:recent-sessions";
+
 export function HistorySidebar({
   onSelectCompany,
   activeCompanyId,
@@ -95,14 +98,21 @@ export function HistorySidebar({
   onSelectCompany?: (companyId: string) => void;
   activeCompanyId?: string | null;
 }) {
-  const [companies, setCompanies] = useState<Company[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [companies, setCompanies] = useState<Company[]>(
+    () => getCached<Company[]>(SESSIONS_CACHE_KEY) ?? [],
+  );
+  const [loading, setLoading] = useState(
+    () => getCached<Company[]>(SESSIONS_CACHE_KEY) === undefined,
+  );
 
   useEffect(() => {
     let cancelled = false;
 
-    accountsService
-      .list()
+    fetchWithCache(SESSIONS_CACHE_KEY, () => accountsService.list(), {
+      onRevalidate: (fresh) => {
+        if (!cancelled) setCompanies(fresh);
+      },
+    })
       .then((data) => {
         if (!cancelled) setCompanies(data);
       })

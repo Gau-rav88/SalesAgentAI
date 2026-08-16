@@ -220,7 +220,11 @@ async def send_email(
         "approved",
     )
 
+    if draft is None:
+        raise HTTPException(status_code=404, detail="Draft not found")
+
     return {
         "success": True,
         "message": "Email sent successfully",
+        "draft": _serialize(draft, draft.company.name if draft.company else ""),
     }

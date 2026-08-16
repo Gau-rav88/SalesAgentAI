@@ -7,7 +7,16 @@ import { RelationshipGraph } from "@/components/graph/relationship-graph";
 import { accountsService } from "@/services/accounts.service";
 import { workspaceService } from "@/services/workspace.service";
 import { ApiError } from "@/services/api-client";
+import { fetchWithCache, getCached } from "@/lib/data-cache";
 import type { Company, RelationshipEdge, RelationshipNode } from "@/types";
+
+const COMPANIES_CACHE_KEY = "graph:companies";
+
+function graphCacheKey(companyId: string) {
+  return `graph:data:${companyId}`;
+}
+
+type GraphData = { nodes: RelationshipNode[]; edges: RelationshipEdge[] };
 
 export default function GraphPage() {
   return (
@@ -28,19 +37,30 @@ function GraphPageInner() {
   const searchParams = useSearchParams();
   const companyId = searchParams.get("company");
 
-  const [companies, setCompanies] = useState<Company[]>([]);
-  const [nodes, setNodes] = useState<RelationshipNode[]>([]);
-  const [edges, setEdges] = useState<RelationshipEdge[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [companies, setCompanies] = useState<Company[]>(
+    () => getCached<Company[]>(COMPANIES_CACHE_KEY) ?? [],
+  );
+  const [nodes, setNodes] = useState<RelationshipNode[]>(
+    () => (companyId ? getCached<GraphData>(graphCacheKey(companyId))?.nodes : undefined) ?? [],
+  );
+  const [edges, setEdges] = useState<RelationshipEdge[]>(
+    () => (companyId ? getCached<GraphData>(graphCacheKey(companyId))?.edges : undefined) ?? [],
+  );
+  const [loading, setLoading] = useState(
+    () => !companyId || getCached<GraphData>(graphCacheKey(companyId)) === undefined,
+  );
   const [error, setError] = useState<string | null>(null);
 
-  // Load the account list once, and default to the first account if
-  // none is selected in the URL.
+  // Load the account list once (cached across visits), and default to
+  // the first account if none is selected in the URL.
   useEffect(() => {
     let cancelled = false;
 
-    accountsService
-      .list()
+    fetchWithCache(COMPANIES_CACHE_KEY, () => accountsService.list(), {
+      onRevalidate: (fresh) => {
+        if (!cancelled) setCompanies(fresh);
+      },
+    })
       .then((data) => {
         if (cancelled) return;
         setCompanies(data);
@@ -65,15 +85,31 @@ function GraphPageInner() {
     }
 
     let cancelled = false;
-    setLoading(true);
+    const key = graphCacheKey(companyId);
+    const cached = getCached<GraphData>(key);
+
+    setLoading(cached === undefined);
     setError(null);
 
-    workspaceService
-      .getGraph(companyId)
+    fetchWithCache(
+      key,
+      async () => {
+        const data = await workspaceService.getGraph(companyId);
+        return { nodes: data.nodes as RelationshipNode[], edges: data.edges as RelationshipEdge[] };
+      },
+      {
+        onRevalidate: (fresh) => {
+          if (!cancelled) {
+            setNodes(fresh.nodes);
+            setEdges(fresh.edges);
+          }
+        },
+      },
+    )
       .then((data) => {
         if (cancelled) return;
-        setNodes(data.nodes as RelationshipNode[]);
-        setEdges(data.edges as RelationshipEdge[]);
+        setNodes(data.nodes);
+        setEdges(data.edges);
       })
       .catch((err) => {
         if (cancelled) return;

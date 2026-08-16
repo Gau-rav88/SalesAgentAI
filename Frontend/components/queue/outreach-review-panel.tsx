@@ -130,6 +130,11 @@ export function OutreachReviewPanel({
     try {
       const result = await queueService.sendEmail(draft.id, recipient, subject, body);
 
+      if (!result?.draft) {
+        console.error("Unexpected /send response shape:", result);
+        throw new Error("Send response did not include the updated draft.");
+      }
+
       await onSent(result.draft);
 
       alert("Email sent successfully!");

@@ -6,20 +6,36 @@ import { RecommendationCard } from "@/components/recommendations/recommendation-
 import { recommendationsService } from "@/services/recommendations.service";
 import { accountsService } from "@/services/accounts.service";
 import { ApiError } from "@/services/api-client";
+import { fetchWithCache, getCached } from "@/lib/data-cache";
 import type { Company, Recommendation } from "@/types";
 
+const COMPANIES_CACHE_KEY = "recommendations:companies";
+
+function recCacheKey(company: string) {
+  return `recommendations:list:${company}`;
+}
+
 export default function RecommendationsPage() {
-  const [companies, setCompanies] = useState<Company[]>([]);
+  const [companies, setCompanies] = useState<Company[]>(
+    () => getCached<Company[]>(COMPANIES_CACHE_KEY) ?? [],
+  );
   const [selectedCompany, setSelectedCompany] = useState<string>("all");
-  const [recommendations, setRecommendations] = useState<Recommendation[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [recommendations, setRecommendations] = useState<Recommendation[]>(
+    () => getCached<Recommendation[]>(recCacheKey("all")) ?? [],
+  );
+  const [loading, setLoading] = useState(
+    () => getCached<Recommendation[]>(recCacheKey("all")) === undefined,
+  );
   const [error, setError] = useState<string | null>(null);
 
-  // Company list for the filter dropdown — loaded once.
+  // Company list for the filter dropdown — loaded once (cached across visits).
   useEffect(() => {
     let cancelled = false;
-    accountsService
-      .list()
+    fetchWithCache(COMPANIES_CACHE_KEY, () => accountsService.list(), {
+      onRevalidate: (fresh) => {
+        if (!cancelled) setCompanies(fresh);
+      },
+    })
       .then((data) => {
         if (!cancelled) setCompanies(data);
       })
@@ -33,11 +49,21 @@ export default function RecommendationsPage() {
 
   useEffect(() => {
     let cancelled = false;
-    setLoading(true);
+    const key = recCacheKey(selectedCompany);
+    const cached = getCached<Recommendation[]>(key);
+
+    setLoading(cached === undefined);
     setError(null);
 
-    recommendationsService
-      .list(selectedCompany === "all" ? undefined : selectedCompany)
+    fetchWithCache(
+      key,
+      () => recommendationsService.list(selectedCompany === "all" ? undefined : selectedCompany),
+      {
+        onRevalidate: (fresh) => {
+          if (!cancelled) setRecommendations(fresh);
+        },
+      },
+    )
       .then((data) => {
         if (!cancelled) setRecommendations(data);
       })

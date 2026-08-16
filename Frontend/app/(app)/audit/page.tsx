@@ -3,11 +3,18 @@
 import { useEffect, useState } from "react";
 import { AuditTimeline } from "@/components/audit/audit-timeline";
 import { workspaceService } from "@/services/workspace.service";
+import { fetchWithCache, getCached } from "@/lib/data-cache";
+
+const HISTORY_CACHE_KEY = "audit:history";
+
+function analysisCacheKey(id: number) {
+  return `audit:analysis:${id}`;
+}
 
 export default function AuditPage() {
   const [events, setEvents] = useState<any[]>([]);
   const [analysis, setAnalysis] = useState<any>(null);
-  const [history, setHistory] = useState<any[]>([]);
+  const [history, setHistory] = useState<any[]>(() => getCached<any[]>(HISTORY_CACHE_KEY) ?? []);
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [open, setOpen] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -17,61 +24,95 @@ export default function AuditPage() {
   // may belong to a different user, since GET /analysis/{id} scopes by
   // current_user.id and returns a plain { error: "..." } body for a miss).
   useEffect(() => {
-    workspaceService.getAnalysisHistory().then((data) => {
+    let cancelled = false;
+
+    fetchWithCache(HISTORY_CACHE_KEY, () => workspaceService.getAnalysisHistory(), {
+      onRevalidate: (fresh) => {
+        if (!cancelled) setHistory(fresh);
+      },
+    }).then((data) => {
+      if (cancelled) return;
       setHistory(data);
-      if (data.length > 0 && selectedId === null) {
-        setSelectedId(data[0].analysis_id);
-      }
+      setSelectedId((current) => {
+        if (current !== null) return current;
+        return data.length > 0 ? data[0].analysis_id : current;
+      });
     });
+
+    return () => {
+      cancelled = true;
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
     if (selectedId === null) return;
 
+    let cancelled = false;
+    const key = analysisCacheKey(selectedId);
+
+    function applyResponse(response: any) {
+      if (!response || "error" in response) {
+        setAnalysis(null);
+        setEvents([]);
+        setLoadError((response as any)?.error || "Analysis not found.");
+        return;
+      }
+
+      setAnalysis(response);
+      setLoadError(null);
+
+      const timeline = Array.isArray(response.timeline) ? response.timeline : [];
+
+      const mapped = timeline.map((item: any, index: number) => ({
+        id: String(index + 1),
+        event: item.agent,
+        agent: item.agent,
+        status:
+          item.status === "completed"
+            ? "success"
+            : item.status === "saved"
+            ? "success"
+            : "info",
+        detail: `${item.agent} finished in ${((item.duration_ms ?? 0) / 1000).toFixed(
+          2
+        )} sec`,
+        time: `${((item.duration_ms ?? 0) / 1000).toFixed(1)} s`,
+      }));
+
+      setEvents(mapped);
+    }
+
     async function load() {
       setLoadError(null);
 
       try {
-        const response = await workspaceService.getAnalysis(selectedId as number);
+        const response = await fetchWithCache(
+          key,
+          () => workspaceService.getAnalysis(selectedId as number),
+          {
+            onRevalidate: (fresh) => {
+              if (!cancelled) applyResponse(fresh);
+            },
+          },
+        );
 
-        if (!response || "error" in response) {
-          setAnalysis(null);
-          setEvents([]);
-          setLoadError((response as any)?.error || "Analysis not found.");
-          return;
-        }
-
-        setAnalysis(response);
-
-        const timeline = Array.isArray(response.timeline) ? response.timeline : [];
-
-        const mapped = timeline.map((item: any, index: number) => ({
-          id: String(index + 1),
-          event: item.agent,
-          agent: item.agent,
-          status:
-            item.status === "completed"
-              ? "success"
-              : item.status === "saved"
-              ? "success"
-              : "info",
-          detail: `${item.agent} finished in ${((item.duration_ms ?? 0) / 1000).toFixed(
-            2
-          )} sec`,
-          time: `${((item.duration_ms ?? 0) / 1000).toFixed(1)} s`,
-        }));
-
-        setEvents(mapped);
+        if (!cancelled) applyResponse(response);
       } catch (e) {
         console.error(e);
-        setAnalysis(null);
-        setEvents([]);
-        setLoadError("Could not reach the backend. Make sure the FastAPI server is running.");
+        if (!cancelled) {
+          setAnalysis(null);
+          setEvents([]);
+          setLoadError("Could not reach the backend. Make sure the FastAPI server is running.");
+        }
       }
     }
 
     load();
+
+    return () => {
+      cancelled = true;
+    };
   }, [selectedId]);
 
   return (
